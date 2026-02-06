@@ -1,0 +1,460 @@
+@page "/managedomains"
+@inject IRiskService RiskService
+
+<PageTitle>Manage Domains - Apollo Risk</PageTitle>
+
+<div class="settings-page">
+    <div class="page-header">
+        <div class="header-content">
+            <div class="header-icon">
+                <RadzenIcon Icon="domain" />
+            </div>
+            <div>
+                <h1>Manage Domains</h1>
+                <p>Configure organizational domains for risk grouping</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <RadzenButton Icon="add" Text="Add Domain" ButtonStyle="ButtonStyle.Primary" Click="@ShowAddDialog" />
+        </div>
+    </div>
+
+    <!-- Domains Grid -->
+    <div class="data-card">
+        @if (isLoading)
+        {
+            <div class="loading-container">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                <span>Loading domains...</span>
+            </div>
+        }
+        else
+        {
+            <RadzenDataGrid @ref="domainsGrid"
+                            Data="@domains"
+                            TItem="DomainDto"
+                            AllowFiltering="true"
+                            AllowSorting="true"
+                            AllowPaging="true"
+                            PageSize="15"
+                            PagerHorizontalAlign="HorizontalAlign.Center"
+                            ShowPagingSummary="true"
+                            Class="risk-data-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="DomainDto" Property="Id" Title="ID" Width="80px" TextAlign="TextAlign.Center" />
+                    <RadzenDataGridColumn TItem="DomainDto" Property="Name" Title="Domain Name" />
+                    <RadzenDataGridColumn TItem="DomainDto" Title="Sites" Width="140px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="count-badge">@(GetSiteCount(item.Id)) sites</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="DomainDto" Title="Categories" Width="160px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="count-badge secondary">@(GetCategoryCount(item.Id)) categories</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="DomainDto" Title="Actions" Width="120px" TextAlign="TextAlign.Center" Sortable="false" Filterable="false">
+                        <Template Context="item">
+                            <div class="action-buttons">
+                                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => ShowEditDialog(item))" title="Edit" />
+                                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => ConfirmDelete(item))" title="Delete" />
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </div>
+
+    <!-- Help Section -->
+    <DynamicHelpSection PageKey="ManageDomains" />
+
+    <!-- Add/Edit Dialog -->
+    @if (showDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDialog">
+            <div class="modal-dialog small" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>@(isEditing ? "Edit Domain" : "Add Domain")</h3>
+                    <button class="modal-close" @onclick="CloseDialog">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Domain Name *</label>
+                        <RadzenTextBox @bind-Value="@currentDomain.Name"
+                                       Placeholder="Enter domain name"
+                                       Style="width: 100%;" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseDialog" />
+                    <RadzenButton Text="@(isEditing ? "Update" : "Create")" ButtonStyle="ButtonStyle.Primary" Click="@SaveDomain" />
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Delete Confirmation -->
+    @if (showDeleteConfirm)
+    {
+        <div class="modal-overlay" @onclick="CloseDeleteConfirm">
+            <div class="modal-dialog small" @onclick:stopPropagation="true">
+                <div class="modal-header danger">
+                    <h3>Delete Domain</h3>
+                    <button class="modal-close" @onclick="CloseDeleteConfirm">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this domain?</p>
+                    <p class="delete-details"><strong>@domainToDelete?.Name</strong></p>
+                    <p class="warning-text">This may affect associated sites and categories.</p>
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseDeleteConfirm" />
+                    <RadzenButton Text="Delete" ButtonStyle="ButtonStyle.Danger" Click="@DeleteDomain" />
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .settings-page {
+        padding: 0;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .header-content {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .header-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #ffd170 0%, #ffb347 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #1e293b;
+    }
+
+    .page-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0;
+    }
+
+    .page-header p {
+        color: #64748b;
+        margin: 0.25rem 0 0;
+        font-size: 0.875rem;
+    }
+
+    .data-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
+        border: 1px solid #e2e8f0;
+        margin-bottom: 1.5rem;
+    }
+
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        gap: 1rem;
+        color: #64748b;
+    }
+
+    .count-badge {
+        display: inline-flex;
+        padding: 0.25rem 0.75rem;
+        background: rgba(245, 158, 11, 0.1);
+        color: #F59E0B;
+        border-radius: 9999px;
+        font-size: 0.8125rem;
+        font-weight: 500;
+    }
+
+        .count-badge.secondary {
+            background: rgba(100, 116, 139, 0.1);
+            color: #64748b;
+        }
+
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        backdrop-filter: blur(4px);
+    }
+
+    .modal-dialog {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 450px;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+        .modal-header.danger {
+            background: #fef2f2;
+        }
+
+            .modal-header.danger h3 {
+                color: #dc2626;
+            }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+    .modal-close {
+        background: none;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem;
+        cursor: pointer;
+        color: #64748b;
+        display: flex;
+    }
+
+        .modal-close:hover {
+            background: #f1f5f9;
+        }
+
+    .modal-body {
+        padding: 1.5rem;
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        padding: 1rem 1.5rem;
+        border-top: 1px solid #e2e8f0;
+        background: #f8fafc;
+        border-radius: 0 0 12px 12px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+        .form-group label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+        }
+
+    .delete-details {
+        background: #f8fafc;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        margin: 1rem 0;
+    }
+
+    .warning-text {
+        color: #d97706;
+        font-size: 0.875rem;
+    }
+
+    :global(html.theme-dark) .data-card {
+        background: #1e293b;
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .page-header h1 {
+        color: #f1f5f9;
+    }
+
+    :global(html.theme-dark) .page-header p {
+        color: #94a3b8;
+    }
+
+    :global(html.theme-dark) .modal-dialog {
+        background: #1e293b;
+    }
+
+    :global(html.theme-dark) .modal-header {
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .modal-body {
+        color: #f1f5f9;
+    }
+
+    :global(html.theme-dark) .modal-footer {
+        background: #0f172a;
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .form-group label {
+        color: #e2e8f0;
+    }
+
+    :global(html.theme-dark) .delete-details {
+        background: #0f172a;
+        border-color: #334155;
+    }
+</style>
+
+@code {
+    private RadzenDataGrid<DomainDto>? domainsGrid;
+    private List<DomainDto> domains = new();
+    private Dictionary<int, int> siteCounts = new();
+    private Dictionary<int, int> categoryCounts = new();
+
+    private bool isLoading = true;
+    private bool showDialog = false;
+    private bool isEditing = false;
+    private bool showDeleteConfirm = false;
+
+    private DomainDto currentDomain = new();
+    private DomainDto? domainToDelete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            domains = await RiskService.GetAllDomainsAsync() ?? new();
+
+            // Load related counts
+            var sites = await RiskService.GetSitesAsync() ?? new();
+            siteCounts = sites.GroupBy(s => s.DomainId).ToDictionary(g => g.Key, g => g.Count());
+
+            var categories = await RiskService.GetCategoriesAsync() ?? new();
+            categoryCounts = categories.GroupBy(c => c.DomainId).ToDictionary(g => g.Key, g => g.Count());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading domains: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private int GetSiteCount(int domainId) => siteCounts.GetValueOrDefault(domainId, 0);
+    private int GetCategoryCount(int domainId) => categoryCounts.GetValueOrDefault(domainId, 0);
+
+    private void ShowAddDialog()
+    {
+        currentDomain = new DomainDto();
+        isEditing = false;
+        showDialog = true;
+    }
+
+    private void ShowEditDialog(DomainDto domain)
+    {
+        currentDomain = new DomainDto { Id = domain.Id, Name = domain.Name };
+        isEditing = true;
+        showDialog = true;
+    }
+
+    private void CloseDialog()
+    {
+        showDialog = false;
+        currentDomain = new();
+    }
+
+    private async Task SaveDomain()
+    {
+        if (string.IsNullOrWhiteSpace(currentDomain.Name)) return;
+
+        try
+        {
+            if (isEditing)
+                await RiskService.UpdateDomainAsync(currentDomain);
+            else
+                await RiskService.CreateDomainAsync(currentDomain);
+
+            CloseDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving domain: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDelete(DomainDto domain)
+    {
+        domainToDelete = domain;
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        showDeleteConfirm = false;
+        domainToDelete = null;
+    }
+
+    private async Task DeleteDomain()
+    {
+        if (domainToDelete != null)
+        {
+            try
+            {
+                await RiskService.DeleteDomainAsync(domainToDelete.Id);
+                CloseDeleteConfirm();
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error deleting domain: {ex.Message}");
+            }
+        }
+    }
+}

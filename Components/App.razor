@@ -1,0 +1,26 @@
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+<script src="js/voice.js"></script>
+<script src="js/chatCharts.js"></script>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/material-base.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link href="css/themes.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="images/favicon.png" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+    <title>Apollo Risk</title>
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="_framework/blazor.web.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="js/site.js"></script>
+</body>
+</html>

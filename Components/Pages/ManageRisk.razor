@@ -1,0 +1,1249 @@
+﻿@page "/managerisks"
+@inject IRiskService RiskService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Manage Risks - Apollo Risk</PageTitle>
+
+<div class="settings-page">
+    <div class="page-header">
+        <div class="header-content">
+            <div class="header-icon">
+                <RadzenIcon Icon="warning" />
+            </div>
+            <div>
+                <h1>Manage Risks</h1>
+                <p>Create and manage turnaround risk records</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <RadzenButton Icon="add" Text="Add Risk" ButtonStyle="ButtonStyle.Primary" Click="@ShowAddDialog" />
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-card">
+        <div class="filters-row">
+            <div class="filter-group">
+                <label>Service</label>
+                <RadzenDropDown @bind-Value="filterServiceId"
+                                Data="@services"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Services"
+                                AllowClear="true"
+                                Style="width: 200px;"
+                                Change="@OnFilterChanged" />
+            </div>
+            <div class="filter-group">
+                <label>Facility</label>
+                <RadzenDropDown @bind-Value="filterSiteId"
+                                Data="@sites"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Facilities"
+                                AllowClear="true"
+                                Style="width: 200px;"
+                                Change="@OnFilterChanged" />
+            </div>
+            <div class="filter-group">
+                <label>Category</label>
+                <RadzenDropDown @bind-Value="filterCategoryId"
+                                Data="@filteredCategories"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Categories"
+                                AllowClear="true"
+                                Style="width: 200px;"
+                                Change="@OnFilterChanged" />
+            </div>
+            <div class="filter-group">
+                <label>Owner</label>
+                <RadzenDropDown @bind-Value="filterOwnerId"
+                                Data="@owners"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Owners"
+                                AllowClear="true"
+                                Style="width: 200px;"
+                                Change="@OnFilterChanged" />
+            </div>
+            <div class="filter-group filter-actions">
+                <RadzenButton Text="Clear Filters" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@ClearFilters" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Risks Grid -->
+    <div class="data-card">
+        @if (isLoading)
+        {
+            <div class="loading-container">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                <span>Loading risks...</span>
+            </div>
+        }
+        else
+        {
+            <div class="grid-header">
+                <span class="record-count">@risks.Count risk(s) found</span>
+            </div>
+            <RadzenDataGrid @ref="risksGrid"
+                            Data="@risks"
+                            TItem="TRRiskDto"
+                            AllowFiltering="true"
+                            AllowSorting="true"
+                            AllowPaging="true"
+                            PageSize="20"
+                            PagerHorizontalAlign="HorizontalAlign.Center"
+                            ShowPagingSummary="true"
+                            FilterMode="FilterMode.Simple"
+                            Class="risk-data-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="TRRiskDto" Property="TRRiskId" Title="ID" Width="70px" TextAlign="TextAlign.Center" />
+                    <RadzenDataGridColumn TItem="TRRiskDto" Property="Name" Title="Risk Name" MinWidth="250px" />
+                    <RadzenDataGridColumn TItem="TRRiskDto" Property="SiteName" Title="Facility" Width="150px" />
+                    <RadzenDataGridColumn TItem="TRRiskDto" Property="ServiceName" Title="Service" Width="140px" />
+                    <RadzenDataGridColumn TItem="TRRiskDto" Property="RiskCategoryName" Title="Category" Width="180px" />
+                    <RadzenDataGridColumn TItem="TRRiskDto" Property="OwnerName" Title="Owner" Width="120px" />
+                    <RadzenDataGridColumn TItem="TRRiskDto" Title="Current RAG" Width="100px" TextAlign="TextAlign.Center" Sortable="false">
+                        <Template Context="item">
+                            @if (!string.IsNullOrEmpty(item.RAGRating))
+                            {
+                                <span class="rag-badge @GetRAGClass(item.RAGRating)">@FormatRAG(item.RAGRating)</span>
+                            }
+                            else
+                            {
+                                <span class="rag-badge none">—</span>
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TRRiskDto" Property="Status" Title="Status" Width="100px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="status-badge @(item.Status?.ToLower() ?? "active")">@(item.Status ?? "Active")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TRRiskDto" Title="Actions" Width="100px" TextAlign="TextAlign.Center" Sortable="false" Filterable="false">
+                        <Template Context="item">
+                            <div class="action-buttons">
+                                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => ShowEditDialog(item))" title="Edit" />
+                                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => ConfirmDelete(item))" title="Delete" />
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </div>
+
+    <!-- Help Section -->
+    <DynamicHelpSection PageKey="ManageRisks" />
+
+    <!-- Add/Edit Dialog -->
+    @if (showDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDialog">
+            <div class="modal-dialog" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>@(isEditing ? "Edit Risk" : "Add Risk")</h3>
+                    <button class="modal-close" @onclick="CloseDialog">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(dialogError))
+                    {
+                        <div class="error-banner">
+                            <RadzenIcon Icon="error" />
+                            <span>@dialogError</span>
+                        </div>
+                    }
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Service *</label>
+                            <RadzenDropDown @bind-Value="currentRisk.ServiceId"
+                                            Data="@services"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select service..."
+                                            Style="width: 100%;"
+                                            Change="@OnServiceChanged" />
+                        </div>
+                        <div class="form-group">
+                            <label>Facility *</label>
+                            <RadzenDropDown @bind-Value="currentRisk.SiteId"
+                                            Data="@sites"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select facility..."
+                                            Style="width: 100%;"
+                                            Change="@OnSiteChanged" />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Risk Category *</label>
+                            <RadzenDropDown @bind-Value="currentRisk.RiskCategoryId"
+                                            Data="@dialogCategories"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select category..."
+                                            Style="width: 100%;"
+                                            Change="@OnCategoryChanged" />
+                        </div>
+                        <div class="form-group">
+                            <label>Owner *</label>
+                            <RadzenDropDown @bind-Value="currentRisk.OwnerId"
+                                            Data="@owners"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select owner..."
+                                            Style="width: 100%;" />
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Risk Name *</label>
+                        <RadzenTextBox @bind-Value="currentRisk.Name"
+                                       Placeholder="Enter risk name or use auto-generate"
+                                       Style="width: 100%;" />
+                        <div class="form-hint">
+                            <RadzenButton Text="Auto-generate name" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall" Click="@AutoGenerateName" Disabled="@(!CanAutoGenerate())" />
+                            <span>Based on Category + Facility</span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Initial RAG Rating</label>
+                            <RadzenDropDown @bind-Value="currentRisk.RAGRating"
+                                            Data="@ragOptions"
+                                            Placeholder="No initial rating"
+                                            AllowClear="true"
+                                            Style="width: 100%;" />
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <RadzenDropDown @bind-Value="currentRisk.Status"
+                                            Data="@statusOptions"
+                                            Style="width: 100%;" />
+                        </div>
+                    </div>
+
+                    @if (isEditing)
+                    {
+                        <div class="info-section">
+                            <div class="info-item">
+                                <span class="info-label">Risk ID:</span>
+                                <span class="info-value">@editingRiskId</span>
+                            </div>
+                            @if (editingRisk?.LastUpdated != null)
+                            {
+                                <div class="info-item">
+                                    <span class="info-label">Last Updated:</span>
+                                    <span class="info-value">@editingRisk.LastUpdated.Value.ToString("dd MMM yyyy")</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseDialog" />
+                    <RadzenButton Text="@(isEditing ? "Update" : "Create")" ButtonStyle="ButtonStyle.Primary" Click="@SaveRisk" IsBusy="@isSaving" />
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Delete Confirmation -->
+    @if (showDeleteConfirm)
+    {
+        <div class="modal-overlay" @onclick="CloseDeleteConfirm">
+            <div class="modal-dialog small" @onclick:stopPropagation="true">
+                <div class="modal-header danger">
+                    <h3>Delete Risk</h3>
+                    <button class="modal-close" @onclick="CloseDeleteConfirm">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this risk?</p>
+                    <div class="delete-item-info">
+                        <strong>@deleteTarget?.Name</strong>
+                        <span>@deleteTarget?.SiteName • @deleteTarget?.ServiceName</span>
+                    </div>
+                    <p class="warning-text">
+                        <RadzenIcon Icon="warning" />
+                        This will also delete all associated scores and history. This action cannot be undone.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseDeleteConfirm" />
+                    <RadzenButton Text="Delete" ButtonStyle="ButtonStyle.Danger" Click="@DeleteRisk" IsBusy="@isDeleting" />
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Bulk Add Dialog -->
+    @if (showBulkDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseBulkDialog">
+            <div class="modal-dialog" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Bulk Add Risks</h3>
+                    <button class="modal-close" @onclick="CloseBulkDialog">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Create the same risk category across multiple facilities.</p>
+
+                    <div class="form-group">
+                        <label>Service *</label>
+                        <RadzenDropDown @bind-Value="bulkServiceId"
+                                        Data="@services"
+                                        TextProperty="Name"
+                                        ValueProperty="Id"
+                                        Placeholder="Select service..."
+                                        Style="width: 100%;"
+                                        Change="@OnBulkServiceChanged" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Risk Category *</label>
+                        <RadzenDropDown @bind-Value="bulkCategoryId"
+                                        Data="@bulkCategories"
+                                        TextProperty="Name"
+                                        ValueProperty="Id"
+                                        Placeholder="Select category..."
+                                        Style="width: 100%;" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Owner *</label>
+                        <RadzenDropDown @bind-Value="bulkOwnerId"
+                                        Data="@owners"
+                                        TextProperty="Name"
+                                        ValueProperty="Id"
+                                        Placeholder="Select owner..."
+                                        Style="width: 100%;" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Select Facilities *</label>
+                        <div class="checkbox-list">
+                            @foreach (var site in sites)
+                            {
+                                <label class="checkbox-item">
+                                    <input type="checkbox" checked="@bulkSelectedSites.Contains(site.Id)"
+                                           @onchange="@(e => ToggleBulkSite(site.Id, (bool)(e.Value ?? false)))" />
+                                    <span>@site.Name</span>
+                                </label>
+                            }
+                        </div>
+                        <div class="bulk-actions">
+                            <RadzenButton Text="Select All" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall" Click="@SelectAllSites" />
+                            <RadzenButton Text="Clear All" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.ExtraSmall" Click="@ClearAllSites" />
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseBulkDialog" />
+                    <RadzenButton Text="@($"Create {bulkSelectedSites.Count} Risk(s)")" ButtonStyle="ButtonStyle.Primary" Click="@CreateBulkRisks" IsBusy="@isSaving" Disabled="@(!CanBulkCreate())" />
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    // Data
+    private List<TRRiskDto> risks = new();
+    private List<ServiceDto> services = new();
+    private List<SiteDto> sites = new();
+    private List<RiskCategoryDto> categories = new();
+    private List<RiskCategoryDto> filteredCategories = new();
+    private List<RiskCategoryDto> dialogCategories = new();
+    private List<RiskCategoryDto> bulkCategories = new();
+    private List<UserDto> owners = new();
+
+    private RadzenDataGrid<TRRiskDto>? risksGrid;
+
+    // Filter state
+    private int? filterServiceId;
+    private int? filterSiteId;
+    private int? filterCategoryId;
+    private int? filterOwnerId;
+
+    // UI state
+    private bool isLoading = true;
+    private bool showDialog = false;
+    private bool showDeleteConfirm = false;
+    private bool showBulkDialog = false;
+    private bool isEditing = false;
+    private bool isSaving = false;
+    private bool isDeleting = false;
+    private string? dialogError;
+
+    // Edit state
+    private CreateTRRiskRequest currentRisk = new();
+    private TRRiskDto? editingRisk;
+    private int editingRiskId;
+    private TRRiskDto? deleteTarget;
+
+    // Bulk add state
+    private int? bulkServiceId;
+    private int? bulkCategoryId;
+    private int? bulkOwnerId;
+    private HashSet<int> bulkSelectedSites = new();
+
+    // Options
+    private List<string> ragOptions = new() { "GREEN", "AMB", "RED" };
+    private List<string> statusOptions = new() { "Active", "Inactive", "Closed" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReferenceData();
+        await LoadRisks();
+    }
+
+    private async Task LoadReferenceData()
+    {
+        services = await RiskService.GetServicesAsync();
+        sites = await RiskService.GetSitesAsync();
+        categories = await RiskService.GetCategoriesAsync();
+        owners = await RiskService.GetOwnersAsync();
+
+        filteredCategories = categories;
+    }
+
+    private async Task LoadRisks()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            risks = await RiskService.GetAllTRRisksAsync(
+                siteId: filterSiteId,
+                serviceId: filterServiceId,
+                categoryId: filterCategoryId,
+                ownerId: filterOwnerId
+            );
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading risks: {ex.Message}");
+            risks = new();
+        }
+
+        isLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnFilterChanged()
+    {
+        // Update filtered categories based on service
+        if (filterServiceId.HasValue)
+        {
+            filteredCategories = await RiskService.GetCategoriesAsync(filterServiceId);
+            if (filterCategoryId.HasValue && !filteredCategories.Any(c => c.Id == filterCategoryId))
+            {
+                filterCategoryId = null;
+            }
+        }
+        else
+        {
+            filteredCategories = categories;
+        }
+
+        await LoadRisks();
+    }
+
+    private async Task ClearFilters()
+    {
+        filterServiceId = null;
+        filterSiteId = null;
+        filterCategoryId = null;
+        filterOwnerId = null;
+        filteredCategories = categories;
+        await LoadRisks();
+    }
+
+    // ============================================================================
+    // ADD/EDIT DIALOG
+    // ============================================================================
+
+    private void ShowAddDialog()
+    {
+        isEditing = false;
+        dialogError = null;
+        currentRisk = new CreateTRRiskRequest
+            {
+                Status = "Active"
+            };
+        dialogCategories = categories;
+        showDialog = true;
+    }
+
+    private async Task ShowEditDialog(TRRiskDto risk)
+    {
+        isEditing = true;
+        dialogError = null;
+        editingRisk = risk;
+        editingRiskId = risk.TRRiskId;
+
+        currentRisk = new CreateTRRiskRequest
+            {
+                Name = risk.Name,
+                SiteId = risk.SiteId,
+                ServiceId = risk.ServiceId,
+                RiskCategoryId = risk.RiskCategoryId,
+                OwnerId = risk.OwnerId,
+                RAGRating = risk.RAGRating,
+                Status = risk.Status ?? "Active",
+                PortfolioId = risk.PortfolioId
+            };
+
+        // Load categories for the selected service
+        if (risk.ServiceId > 0)
+        {
+            dialogCategories = await RiskService.GetCategoriesAsync(risk.ServiceId);
+        }
+        else
+        {
+            dialogCategories = categories;
+        }
+
+        showDialog = true;
+    }
+
+    private void CloseDialog()
+    {
+        showDialog = false;
+        dialogError = null;
+    }
+
+    private async Task OnServiceChanged()
+    {
+        if (currentRisk.ServiceId > 0)
+        {
+            dialogCategories = await RiskService.GetCategoriesAsync(currentRisk.ServiceId);
+
+            // Clear category if not in new list
+            if (currentRisk.RiskCategoryId > 0 && !dialogCategories.Any(c => c.Id == currentRisk.RiskCategoryId))
+            {
+                currentRisk.RiskCategoryId = 0;
+            }
+        }
+        else
+        {
+            dialogCategories = categories;
+        }
+    }
+
+    private void OnSiteChanged()
+    {
+        // Auto-generate name if category is selected
+        if (CanAutoGenerate() && string.IsNullOrWhiteSpace(currentRisk.Name))
+        {
+            AutoGenerateName();
+        }
+    }
+
+    private void OnCategoryChanged()
+    {
+        // Auto-generate name if site is selected
+        if (CanAutoGenerate() && string.IsNullOrWhiteSpace(currentRisk.Name))
+        {
+            AutoGenerateName();
+        }
+    }
+
+    private bool CanAutoGenerate()
+    {
+        return currentRisk.RiskCategoryId > 0 && currentRisk.SiteId > 0;
+    }
+
+    private void AutoGenerateName()
+    {
+        var category = dialogCategories.FirstOrDefault(c => c.Id == currentRisk.RiskCategoryId);
+        var site = sites.FirstOrDefault(s => s.Id == currentRisk.SiteId);
+
+        if (category != null && site != null)
+        {
+            currentRisk.Name = $"{category.Name} - {site.Name}";
+        }
+    }
+
+    private async Task SaveRisk()
+    {
+        dialogError = null;
+
+        // Validation
+        if (currentRisk.ServiceId <= 0)
+        {
+            dialogError = "Please select a service.";
+            return;
+        }
+        if (currentRisk.SiteId <= 0)
+        {
+            dialogError = "Please select a facility.";
+            return;
+        }
+        if (currentRisk.RiskCategoryId <= 0)
+        {
+            dialogError = "Please select a risk category.";
+            return;
+        }
+        if (currentRisk.OwnerId <= 0)
+        {
+            dialogError = "Please select an owner.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(currentRisk.Name))
+        {
+            dialogError = "Please enter a risk name.";
+            return;
+        }
+
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            if (isEditing)
+            {
+                var updateRequest = new UpdateTRRiskRequest
+                    {
+                        TRRiskId = editingRiskId,
+                        Name = currentRisk.Name,
+                        SiteId = currentRisk.SiteId,
+                        ServiceId = currentRisk.ServiceId,
+                        RiskCategoryId = currentRisk.RiskCategoryId,
+                        OwnerId = currentRisk.OwnerId,
+                        RAGRating = currentRisk.RAGRating,
+                        Status = currentRisk.Status,
+                        PortfolioId = currentRisk.PortfolioId
+                    };
+
+                var success = await RiskService.UpdateTRRiskAsync(updateRequest);
+                if (success)
+                {
+                    showDialog = false;
+                    await LoadRisks();
+                }
+                else
+                {
+                    dialogError = "Failed to update risk. Please try again.";
+                }
+            }
+            else
+            {
+                var result = await RiskService.CreateTRRiskAsync(currentRisk);
+                if (result != null)
+                {
+                    showDialog = false;
+                    await LoadRisks();
+                }
+                else
+                {
+                    dialogError = "Failed to create risk. It may already exist.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            dialogError = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // ============================================================================
+    // DELETE
+    // ============================================================================
+
+    private void ConfirmDelete(TRRiskDto risk)
+    {
+        deleteTarget = risk;
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        showDeleteConfirm = false;
+        deleteTarget = null;
+    }
+
+    private async Task DeleteRisk()
+    {
+        if (deleteTarget == null) return;
+
+        isDeleting = true;
+        StateHasChanged();
+
+        try
+        {
+            var success = await RiskService.DeleteTRRiskAsync(deleteTarget.TRRiskId);
+            if (success)
+            {
+                showDeleteConfirm = false;
+                deleteTarget = null;
+                await LoadRisks();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting risk: {ex.Message}");
+        }
+        finally
+        {
+            isDeleting = false;
+            StateHasChanged();
+        }
+    }
+
+    // ============================================================================
+    // BULK ADD
+    // ============================================================================
+
+    private void ShowBulkDialog()
+    {
+        bulkServiceId = null;
+        bulkCategoryId = null;
+        bulkOwnerId = null;
+        bulkSelectedSites.Clear();
+        bulkCategories = categories;
+        showBulkDialog = true;
+    }
+
+    private void CloseBulkDialog()
+    {
+        showBulkDialog = false;
+    }
+
+    private async Task OnBulkServiceChanged()
+    {
+        if (bulkServiceId.HasValue)
+        {
+            bulkCategories = await RiskService.GetCategoriesAsync(bulkServiceId);
+            if (bulkCategoryId.HasValue && !bulkCategories.Any(c => c.Id == bulkCategoryId))
+            {
+                bulkCategoryId = null;
+            }
+        }
+        else
+        {
+            bulkCategories = categories;
+        }
+    }
+
+    private void ToggleBulkSite(int siteId, bool selected)
+    {
+        if (selected)
+            bulkSelectedSites.Add(siteId);
+        else
+            bulkSelectedSites.Remove(siteId);
+    }
+
+    private void SelectAllSites()
+    {
+        bulkSelectedSites = sites.Select(s => s.Id).ToHashSet();
+    }
+
+    private void ClearAllSites()
+    {
+        bulkSelectedSites.Clear();
+    }
+
+    private bool CanBulkCreate()
+    {
+        return bulkServiceId.HasValue &&
+               bulkCategoryId.HasValue &&
+               bulkOwnerId.HasValue &&
+               bulkSelectedSites.Count > 0;
+    }
+
+    private async Task CreateBulkRisks()
+    {
+        if (!CanBulkCreate()) return;
+
+        isSaving = true;
+        StateHasChanged();
+
+        var category = bulkCategories.FirstOrDefault(c => c.Id == bulkCategoryId);
+        int successCount = 0;
+
+        try
+        {
+            foreach (var siteId in bulkSelectedSites)
+            {
+                var site = sites.FirstOrDefault(s => s.Id == siteId);
+                if (site == null) continue;
+
+                var request = new CreateTRRiskRequest
+                    {
+                        Name = $"{category?.Name} - {site.Name}",
+                        SiteId = siteId,
+                        ServiceId = bulkServiceId!.Value,
+                        RiskCategoryId = bulkCategoryId!.Value,
+                        OwnerId = bulkOwnerId!.Value,
+                        Status = "Active"
+                    };
+
+                var result = await RiskService.CreateTRRiskAsync(request);
+                if (result != null) successCount++;
+            }
+
+            showBulkDialog = false;
+            await LoadRisks();
+
+            await JSRuntime.InvokeVoidAsync("console.log", $"Bulk create completed: {successCount} of {bulkSelectedSites.Count} risks created");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in bulk create: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // ============================================================================
+    // HELPERS
+    // ============================================================================
+
+    private string GetRAGClass(string? rating) => rating?.ToUpper() switch
+    {
+        "RED" => "rag-red",
+        "AMB" or "AMBER" => "rag-amber",
+        "GRE" or "GREEN" => "rag-green",
+        _ => ""
+    };
+
+    private string FormatRAG(string? rating) => rating?.ToUpper() switch
+    {
+        "RED" => "Red",
+        "AMB" or "AMBER" => "Amber",
+        "GRE" or "GREEN" => "Green",
+        _ => rating ?? ""
+    };
+}
+
+<style>
+    .settings-page {
+        padding: 1.5rem;
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .header-content {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .header-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #ffd170 0%, #ffb347 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #1e293b;
+    }
+
+    .header-content h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary, #1e293b);
+        margin: 0;
+    }
+
+    .header-content p {
+        font-size: 0.875rem;
+        color: var(--text-secondary, #64748b);
+        margin: 0;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    /* Filters */
+    .filters-card {
+        background: var(--card-bg, #fff);
+        border-radius: 12px;
+        padding: 1rem 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .filters-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: flex-end;
+    }
+
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+        .filter-group label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-secondary, #64748b);
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+    .filter-actions {
+        margin-left: auto;
+    }
+
+    /* Data Card */
+    .data-card {
+        background: var(--card-bg, #fff);
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .grid-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
+    }
+
+    .record-count {
+        font-size: 0.875rem;
+        color: var(--text-secondary, #64748b);
+    }
+
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        gap: 1rem;
+        color: var(--text-secondary, #64748b);
+    }
+
+    /* RAG Badge */
+    .rag-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: capitalize;
+    }
+
+        .rag-badge.rag-red {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .rag-badge.rag-amber {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .rag-badge.rag-green {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+
+        .rag-badge.none {
+            background: var(--bg-light, #f1f5f9);
+            color: var(--text-muted, #94a3b8);
+        }
+
+    /* Status Badge */
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+        .status-badge.active {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+
+        .status-badge.inactive {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .status-badge.closed {
+            background: var(--bg-light, #f1f5f9);
+            color: var(--text-muted, #64748b);
+        }
+
+    /* Action Buttons */
+    .action-buttons {
+        display: flex;
+        gap: 0.25rem;
+        justify-content: center;
+    }
+
+    /* Modal */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1rem;
+    }
+
+    .modal-dialog {
+        background: var(--card-bg, #fff);
+        border-radius: 12px;
+        width: 100%;
+        max-width: 600px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+        .modal-dialog.small {
+            max-width: 450px;
+        }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
+    }
+
+        .modal-header h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin: 0;
+            color: var(--text-primary, #1e293b);
+        }
+
+        .modal-header.danger {
+            background: #fef2f2;
+        }
+
+            .modal-header.danger h3 {
+                color: #dc2626;
+            }
+
+    .modal-close {
+        background: none;
+        border: none;
+        padding: 0.25rem;
+        cursor: pointer;
+        color: var(--text-secondary, #64748b);
+        border-radius: 4px;
+    }
+
+        .modal-close:hover {
+            background: var(--bg-light, #f1f5f9);
+        }
+
+    .modal-body {
+        padding: 1.5rem;
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--border-color, #e2e8f0);
+        background: var(--bg-light, #f8fafc);
+        border-radius: 0 0 12px 12px;
+    }
+
+    /* Form Elements */
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+        margin-bottom: 1rem;
+    }
+
+    .form-row .form-group {
+        margin-bottom: 0;
+    }
+
+    .form-group label {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--text-primary, #1e293b);
+    }
+
+    .form-hint {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--text-muted, #64748b);
+    }
+
+    /* Error Banner */
+    .error-banner {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        color: #dc2626;
+        font-size: 0.875rem;
+        margin-bottom: 1rem;
+    }
+
+    /* Info Section */
+    .info-section {
+        background: var(--bg-light, #f8fafc);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin-top: 1rem;
+    }
+
+    .info-item {
+        display: flex;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+    }
+
+    .info-label {
+        color: var(--text-secondary, #64748b);
+    }
+
+    .info-value {
+        color: var(--text-primary, #1e293b);
+        font-weight: 500;
+    }
+
+    /* Delete Dialog */
+    .delete-item-info {
+        background: var(--bg-light, #f8fafc);
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+
+        .delete-item-info strong {
+            display: block;
+            color: var(--text-primary, #1e293b);
+            margin-bottom: 0.25rem;
+        }
+
+        .delete-item-info span {
+            font-size: 0.8125rem;
+            color: var(--text-secondary, #64748b);
+        }
+
+    .warning-text {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+        color: #d97706;
+        margin-top: 1rem;
+    }
+
+    /* Checkbox List */
+    .checkbox-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 0.5rem;
+        max-height: 200px;
+        overflow-y: auto;
+        padding: 0.5rem;
+        border: 1px solid var(--border-color, #e2e8f0);
+        border-radius: 8px;
+        background: var(--bg-light, #f8fafc);
+    }
+
+    .checkbox-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        cursor: pointer;
+    }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-color, #ffd170);
+        }
+
+    .bulk-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+    }
+
+    /* Responsive */
+    @@media (max-width: 768px) {
+        .form-row {
+            grid-template-columns: 1fr;
+        }
+
+        .filters-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .filter-group {
+            width: 100%;
+        }
+
+        .filter-actions {
+            margin-left: 0;
+        }
+    }
+</style>

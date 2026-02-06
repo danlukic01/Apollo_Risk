@@ -1,0 +1,533 @@
+@page "/trdashboard"
+@page "/"
+@inject IRiskService RiskService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Dashboard - Apollo Risk</PageTitle>
+
+<div class="dashboard-page">
+    <div class="page-header">
+        <div class="header-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+        </div>
+        <div class="header-content">
+            <h1>Turnaround Risk Dashboard</h1>
+            <p>Monitor and manage organizational risk across all sites and services</p>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+        <div class="filter-group">
+            <span class="filter-label">Site:</span>
+            <RadzenDropDown @bind-Value="selectedSiteId" Data="@sites" TextProperty="Name"
+                            ValueProperty="Id" Placeholder="All Sites" AllowClear="true"
+                            Change="@OnFilterChanged" Style="width: 200px;" />
+        </div>
+        <div class="filter-group">
+            <span class="filter-label">Service:</span>
+            <RadzenDropDown @bind-Value="selectedServiceId" Data="@services" TextProperty="Name"
+                            ValueProperty="Id" Placeholder="All Services" AllowClear="true"
+                            Change="@OnFilterChanged" Style="width: 200px;" />
+        </div>
+        <div class="filter-group" style="margin-left: auto;">
+            <button class="btn btn-secondary" @onclick="RefreshData" disabled="@isLoading">
+                <RadzenIcon Icon="refresh" />
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="loading-container">
+            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+        </div>
+    }
+    else
+    {
+        <!-- KPI Summary Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-icon red">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-value danger">@summary.HighRiskCount</div>
+                    <div class="kpi-label">High Risk (Red)</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon amber">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-value warning">@summary.MediumRiskCount</div>
+                    <div class="kpi-label">Medium Risk (Amber)</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon green">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-value success">@summary.LowRiskCount</div>
+                    <div class="kpi-label">Low Risk (Green)</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon teal">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-value primary">@summary.TotalRisks</div>
+                    <div class="kpi-label">Total Risks</div>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-icon blue">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-value">@summary.AverageScore.ToString("N1")</div>
+                    <div class="kpi-label">Average Score</div>
+                    @if (!string.IsNullOrEmpty(summary.TrendDirection))
+                    {
+                        <div class="kpi-trend @(summary.TrendDirection == "up" ? "down" : summary.TrendDirection == "down" ? "up" : "")">
+                            @if (summary.TrendDirection == "up")
+                            {
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                                    <polyline points="17 6 23 6 23 12"></polyline>
+                                </svg>
+                                <span>+@summary.TrendValue?.ToString("N1") from last month</span>
+                            }
+                            else if (summary.TrendDirection == "down")
+                            {
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline>
+                                    <polyline points="17 18 23 18 23 12"></polyline>
+                                </svg>
+                                <span>@summary.TrendValue?.ToString("N1") from last month</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- Top Risks Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <RiskIcon Size="24px" Color="#F59E0B" />
+                        Top Risks
+                    </h3>
+                    <span class="record-count">@topRisks.Count items</span>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <RadzenDataGrid Data="@topRisks" TItem="TopRiskDto" AllowSorting="true"
+                                    AllowPaging="true" PageSize="5" PagerHorizontalAlign="HorizontalAlign.Center">
+                        <Columns>
+                            <RadzenDataGridColumn TItem="TopRiskDto" Property="Name" Title="Risk" Width="200px" />
+                            <RadzenDataGridColumn TItem="TopRiskDto" Property="SiteName" Title="Site" Width="150px" />
+                            <RadzenDataGridColumn TItem="TopRiskDto" Property="CategoryName" Title="Category" Width="150px" />
+                            <RadzenDataGridColumn TItem="TopRiskDto" Property="Score" Title="Score" Width="80px" TextAlign="TextAlign.Center">
+                                <Template Context="item">
+                                    <span class="score-value">@item.Score.ToString("N1")</span>
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="TopRiskDto" Property="RAGRating" Title="Status" Width="100px" TextAlign="TextAlign.Center">
+                                <Template Context="item">
+                                    <span class="rag-badge @item.RAGRating?.ToLower()">@item.RAGRating</span>
+                                </Template>
+                            </RadzenDataGridColumn>
+                            <RadzenDataGridColumn TItem="TopRiskDto" Property="Variance" Title="Variance" Width="100px" TextAlign="TextAlign.Center">
+                                <Template Context="item">
+                                    @if (item.Variance.HasValue)
+                                    {
+                                        <span class="variance @(item.Variance > 0 ? "negative" : item.Variance < 0 ? "positive" : "")">
+                                            @(item.Variance > 0 ? "+" : "")@item.Variance?.ToString("N1")
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="variance">-</span>
+                                    }
+                                </Template>
+                            </RadzenDataGridColumn>
+                        </Columns>
+                    </RadzenDataGrid>
+                </div>
+            </div>
+
+            <!-- Watchlist -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <RadzenIcon Icon="visibility" style="color: var(--warning-color);" />
+                        Watchlist
+                    </h3>
+                    <span class="record-count">@watchlist.Count items</span>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    @if (watchlist.Any())
+                    {
+                        <RadzenDataGrid Data="@watchlist" TItem="WatchlistItemDto" AllowSorting="true"
+                                        AllowPaging="true" PageSize="5" PagerHorizontalAlign="HorizontalAlign.Center">
+                            <Columns>
+                                <RadzenDataGridColumn TItem="WatchlistItemDto" Property="Name" Title="Risk" Width="200px" />
+                                <RadzenDataGridColumn TItem="WatchlistItemDto" Property="SiteName" Title="Site" Width="150px" />
+                                <RadzenDataGridColumn TItem="WatchlistItemDto" Property="Score" Title="Score" Width="80px" TextAlign="TextAlign.Center">
+                                    <Template Context="item">
+                                        <span class="score-value">@item.Score.ToString("N1")</span>
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="WatchlistItemDto" Property="RAGRating" Title="Status" Width="100px" TextAlign="TextAlign.Center">
+                                    <Template Context="item">
+                                        <span class="rag-badge @item.RAGRating?.ToLower()">@item.RAGRating</span>
+                                    </Template>
+                                </RadzenDataGridColumn>
+                                <RadzenDataGridColumn TItem="WatchlistItemDto" Property="Reason" Title="Reason" />
+                            </Columns>
+                        </RadzenDataGrid>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <div class="empty-icon">
+                                <RadzenIcon Icon="check_circle" />
+                            </div>
+                            <h3>No items on watchlist</h3>
+                            <p>All risks are within acceptable thresholds</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Risk Trend Chart -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <RadzenIcon Icon="trending_up" style="color: var(--primary-color);" />
+                    Risk Score Trend (12 Months)
+                </h3>
+            </div>
+            <div class="card-body">
+                <RadzenChart Style="height: 300px;">
+                    <RadzenLineSeries Data="@trendData" CategoryProperty="MonthLabel" ValueProperty="AverageScore"
+                                      Title="Average Score" Smooth="true" StrokeWidth="3">
+                        <RadzenMarkers MarkerType="MarkerType.Circle" Size="8" />
+                    </RadzenLineSeries>
+                    <RadzenCategoryAxis>
+                        <RadzenGridLines Visible="true" />
+                    </RadzenCategoryAxis>
+                    <RadzenValueAxis>
+                        <RadzenGridLines Visible="true" />
+                    </RadzenValueAxis>
+                    <RadzenLegend Position="LegendPosition.Bottom" />
+                </RadzenChart>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="dashboard-grid">
+            <!-- Recent Journal Notes -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <RadzenIcon Icon="note" style="color: var(--info-color);" />
+                        Recent Journal Notes
+                    </h3>
+                </div>
+                <div class="card-body">
+                    @if (recentNotes.Any())
+                    {
+                        <div class="activity-list">
+                            @foreach (var note in recentNotes.Take(5))
+                            {
+                                <div class="activity-item">
+                                    <div class="activity-icon">
+                                        <RadzenIcon Icon="edit_note" />
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">@note.Title</div>
+                                        <div class="activity-meta">
+                                            <span>@note.TRRiskName</span>
+                                            <span>•</span>
+                                            <span>@note.UserName</span>
+                                            <span>•</span>
+                                            <span>@note.CreatedAt.ToString("dd MMM yyyy")</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p>No recent journal notes</p>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Upcoming Reminders -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <RadzenIcon Icon="alarm" style="color: var(--warning-color);" />
+                        Upcoming Reminders
+                    </h3>
+                </div>
+                <div class="card-body">
+                    @if (reminders.Any())
+                    {
+                        <div class="activity-list">
+                            @foreach (var reminder in reminders.Take(5))
+                            {
+                                <div class="activity-item">
+                                    <div class="activity-icon reminder">
+                                        <RadzenIcon Icon="notifications" />
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">@reminder.Message</div>
+                                        <div class="activity-meta">
+                                            <span>@reminder.TRRiskName</span>
+                                            <span>•</span>
+                                            <span>Due: @reminder.RemindAt.ToString("dd MMM yyyy")</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="empty-state">
+                            <p>No upcoming reminders</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Help Section -->
+        <DynamicHelpSection PageKey="TrRiskDashboard" ThresholdTitle="Compliance Rate Thresholds" />
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private int? selectedSiteId;
+    private int? selectedServiceId;
+
+    private List<SiteDto> sites = new();
+    private List<ServiceDto> services = new();
+    private RiskDashboardSummaryDto summary = new();
+    private List<TopRiskDto> topRisks = new();
+    private List<WatchlistItemDto> watchlist = new();
+    private List<TrendDataWithLabel> trendData = new();
+    private List<JournalNoteDto> recentNotes = new();
+    private List<ReminderDto> reminders = new();
+
+    private class TrendDataWithLabel
+    {
+        public string MonthLabel { get; set; } = "";
+        public decimal AverageScore { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReferenceData();
+        await LoadDashboardData();
+    }
+
+    private async Task LoadReferenceData()
+    {
+        sites = await RiskService.GetAllSitesAsync();
+        services = await RiskService.GetServicesAsync();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var summaryTask = RiskService.GetDashboardSummaryAsync(selectedSiteId, selectedServiceId);
+            var topRisksTask = RiskService.GetTopRisksAsync(10, selectedSiteId, selectedServiceId);
+            var watchlistTask = RiskService.GetWatchlistAsync(selectedSiteId, selectedServiceId);
+            var trendTask = RiskService.GetRiskTrendChartDataAsync(12, selectedSiteId, selectedServiceId);
+            var notesTask = RiskService.GetRecentTRRiskJournalNotesAsync(5);
+            var remindersTask = RiskService.GetRemindersAsync();
+
+            await Task.WhenAll(summaryTask, topRisksTask, watchlistTask, trendTask, notesTask, remindersTask);
+
+            summary = await summaryTask;
+            topRisks = await topRisksTask;
+            watchlist = await watchlistTask;
+            recentNotes = await notesTask;
+            reminders = await remindersTask;
+
+            var rawTrend = await trendTask;
+            trendData = rawTrend.Select(t => new TrendDataWithLabel
+                {
+                    MonthLabel = t.Month.ToString("MMM yyyy"),
+                    AverageScore = t.AverageScore
+                }).ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dashboard: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnFilterChanged()
+    {
+        await LoadDashboardData();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadDashboardData();
+    }
+}
+
+<style>
+    .dashboard-page {
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .record-count {
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+        background: var(--bg-light);
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+    }
+
+    .score-value {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .variance {
+        font-size: 0.8125rem;
+        font-weight: 500;
+    }
+
+        .variance.positive {
+            color: var(--success-color);
+        }
+
+        .variance.negative {
+            color: var(--danger-color);
+        }
+
+    /* Activity List */
+    .activity-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .activity-item {
+        display: flex;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        background: var(--bg-light);
+        border-radius: 8px;
+        transition: all 0.2s;
+    }
+
+        .activity-item:hover {
+            background: var(--bg-hover);
+        }
+
+    .activity-icon {
+        width: 36px;
+        height: 36px;
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--info-color);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+        .activity-icon.reminder {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning-color);
+        }
+
+    .activity-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .activity-title {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .activity-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+    }
+
+    @@media (max-width: 1024px) {
+        .dashboard-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>

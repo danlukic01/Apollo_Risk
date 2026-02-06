@@ -1,0 +1,1484 @@
+@inject IChatService ChatService
+@inject IJSRuntime JSRuntime
+@inject IConfiguration Configuration
+@implements IAsyncDisposable
+
+<div class="chat-widget @(_isOpen ? "open" : "") @(_isFullscreen ? "fullscreen" : "")">
+    @if (_isOpen)
+    {
+        <div class="chat-container">
+            <div class="chat-header">
+                <div class="chat-title">
+                    <div class="header-avatar">
+                        <RiskIcon Size="28px" Color="#FFFFFF" />
+                    </div>
+                    <div class="header-info">
+                        <span class="header-name">Risk AI</span>
+                        <span class="header-status">
+                            <span class="status-dot"></span>
+                            <span>Risk Analytics Assistant</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    @if (_sessionId.HasValue)
+                    {
+                        <button class="header-btn" @onclick="StartNewSession" title="New conversation">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                <line x1="12" y1="8" x2="12" y2="14"></line>
+                                <line x1="9" y1="11" x2="15" y2="11"></line>
+                            </svg>
+                        </button>
+                    }
+                    <button class="header-btn" @onclick="ToggleFullscreen" title="@(_isFullscreen ? "Exit fullscreen" : "Fullscreen")">
+                        @if (_isFullscreen)
+                        {
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="4 14 10 14 10 20"></polyline>
+                                <polyline points="20 10 14 10 14 4"></polyline>
+                                <line x1="14" y1="10" x2="21" y2="3"></line>
+                                <line x1="3" y1="21" x2="10" y2="14"></line>
+                            </svg>
+                        }
+                        else
+                        {
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <polyline points="9 21 3 21 3 15"></polyline>
+                                <line x1="21" y1="3" x2="14" y2="10"></line>
+                                <line x1="3" y1="21" x2="10" y2="14"></line>
+                            </svg>
+                        }
+                    </button>
+                    <button class="close-btn" @onclick="ToggleChat" title="Close">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="chat-messages" @ref="_messagesContainer">
+                @if (!_messages.Any())
+                {
+                    <div class="welcome-message">
+                        <div class="welcome-avatar">
+                            <RiskIcon Size="48px" Color="#F59E0B" />
+                        </div>
+                        <h4>Hi, I'm Risk AI! 👋</h4>
+                        <p>Your AI-powered risk analytics assistant. I can help you understand risk data, generate reports, and provide insights.</p>
+                        <div class="suggestion-chips">
+                            <button class="chip" @onclick='() => SendSuggestion("What are the top high-risk items?")'>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                </svg>
+                                Top high-risk items
+                            </button>
+                            <button class="chip" @onclick='() => SendSuggestion("Show me the risk trend for the last 6 months")'>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                                </svg>
+                                Risk trends
+                            </button>
+                            <button class="chip" @onclick='() => SendSuggestion("Which sites have the most risk?")'>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                    <circle cx="12" cy="10" r="3"></circle>
+                                </svg>
+                                Risk by site
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                @foreach (var message in _messages)
+                {
+                    <div class="message @(message.IsUser ? "user" : "assistant")">
+                        @if (!message.IsUser)
+                        {
+                            <div class="avatar">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                </svg>
+                            </div>
+                        }
+                        <div class="message-content">
+                            <div class="message-text">
+                                @((MarkupString)(string.IsNullOrEmpty(message.RenderedContent) ? FormatMessage(message.Content) : message.RenderedContent))
+                            </div>
+                            <div class="message-footer">
+                                <span class="message-time">@message.Timestamp.ToString("HH:mm")</span>
+                                @if (!message.IsUser && message.MessageId > 0)
+                                {
+                                    <div class="feedback-buttons">
+                                        <button class="feedback-btn @(message.Feedback == 1 ? "active-up" : "")"
+                                                @onclick="() => SubmitFeedback(message, 1)"
+                                                title="Helpful"
+                                                disabled="@(message.Feedback != 0)">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="@(message.Feedback == 1 ? "currentColor" : "none")" stroke="currentColor" stroke-width="2">
+                                                <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path>
+                                            </svg>
+                                        </button>
+                                        <button class="feedback-btn @(message.Feedback == -1 ? "active-down" : "")"
+                                                @onclick="() => SubmitFeedback(message, -1)"
+                                                title="Not helpful"
+                                                disabled="@(message.Feedback != 0)">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="@(message.Feedback == -1 ? "currentColor" : "none")" stroke="currentColor" stroke-width="2">
+                                                <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* Display suggestions after messages *@
+                @if (_currentSuggestions.Any() && !_isLoading)
+                {
+                    <div class="suggestions-container">
+                        <span class="suggestions-label">Suggested questions:</span>
+                        <div class="suggestions-list">
+                            @foreach (var suggestion in _currentSuggestions.Take(4))
+                            {
+                                <button class="suggestion-btn" @onclick="() => SendSuggestion(suggestion.Text)">
+                                    @((MarkupString)GetSuggestionIcon(suggestion.Icon))
+                                    <span>@suggestion.Text</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (_isLoading)
+                {
+                    <div class="message assistant">
+                        <div class="avatar">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            </svg>
+                        </div>
+                        <div class="typing-indicator">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="chat-input">
+                @if (!string.IsNullOrEmpty(_voiceError))
+                {
+                    <div class="voice-error">@_voiceError</div>
+                }
+                <div class="input-wrapper">
+                    <textarea @bind="_inputMessage"
+                              @bind:event="oninput"
+                              @onkeydown="HandleKeyPress"
+                              placeholder="@(_isVoiceRecording ? "Listening..." : "Ask about risk data...")"
+                              rows="1"
+                              disabled="@_isLoading"></textarea>
+                    @if (_voiceSupported)
+                    {
+                        <button class="voice-btn @(_isVoiceRecording ? "recording" : "")" 
+                                @onclick="ToggleVoice" 
+                                title="@(_isVoiceRecording ? "Stop recording" : "Voice input")"
+                                disabled="@_isLoading">
+                            @if (_isVoiceRecording)
+                            {
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                    <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                                </svg>
+                            }
+                            else
+                            {
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                                </svg>
+                            }
+                        </button>
+                    }
+                    <button class="send-btn" @onclick="SendMessage" disabled="@(string.IsNullOrWhiteSpace(_inputMessage) || _isLoading)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (!_isOpen)
+    {
+        <div class="fab-tooltip">Ask Risk AI</div>
+    }
+
+    <button class="chat-fab @(_isOpen ? "hidden" : "")" @onclick="ToggleChat" title="Chat with Risk AI">
+        <div class="fab-inner">
+            <RiskIcon Size="28px" Color="#FFFFFF" />
+        </div>
+        @if (_unreadCount > 0)
+        {
+            <span class="unread-badge">@_unreadCount</span>
+        }
+    </button>
+</div>
+
+<style>
+    /* Chat Widget Base */
+    .chat-widget {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        z-index: 1000;
+        font-family: inherit;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.5rem;
+    }
+
+    .chat-widget.fullscreen {
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 0;
+        z-index: 9999;
+    }
+
+    /* Chat Container */
+    .chat-container {
+        width: 400px;
+        height: 550px;
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15), 0 2px 10px rgba(0, 0, 0, 0.1);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: slideUp 0.3s ease;
+    }
+
+    @@keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Chat Header */
+    .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem;
+        background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+        color: white;
+    }
+
+    .chat-title {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .header-avatar {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .header-info {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .header-name {
+        font-weight: 600;
+        font-size: 0.9375rem;
+    }
+
+    .header-status {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        font-size: 0.75rem;
+        opacity: 0.9;
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        background: #4ade80;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+    }
+
+    @@keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .header-btn, .close-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: none;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    }
+
+    .header-btn:hover, .close-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Chat Messages */
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        background: white;
+    }
+
+    /* Welcome Message */
+    .welcome-message {
+        text-align: center;
+        padding: 2rem 1rem;
+    }
+
+    .welcome-avatar {
+        width: 56px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+    }
+
+    .welcome-message h4 {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #1e293b;
+        margin: 0 0 0.5rem;
+    }
+
+    .welcome-message p {
+        font-size: 0.875rem;
+        color: #64748b;
+        line-height: 1.5;
+        margin-bottom: 1.5rem;
+    }
+
+    /* Suggestion Chips */
+    .suggestion-chips {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.625rem 1rem;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        font-size: 0.8125rem;
+        color: #475569;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .chip:hover {
+        background: #FEF3C7;
+        border-color: #F59E0B;
+        color: #F59E0B;
+    }
+
+    .chip svg {
+        stroke: #F59E0B;
+    }
+
+    /* Messages */
+    .message {
+        display: flex;
+        gap: 0.75rem;
+        max-width: 85%;
+    }
+
+    .message.user {
+        align-self: flex-end;
+        flex-direction: row-reverse;
+    }
+
+    .avatar {
+        width: 32px;
+        height: 32px;
+        background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        flex-shrink: 0;
+    }
+
+    .message-content {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .message-text {
+        padding: 0.875rem 1rem;
+        border-radius: 16px 16px 16px 4px;
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+
+    .message.assistant .message-text {
+        background: white;
+        color: #334155;
+        border: 1px solid #e2e8f0;
+    }
+
+    .message.user .message-text {
+        background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+        color: white;
+        border-radius: 16px 16px 4px 16px;
+    }
+
+    .message-footer {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.375rem;
+        padding: 0 0.25rem;
+    }
+
+    .message-time {
+        font-size: 0.6875rem;
+        color: #94a3b8;
+    }
+
+    .feedback-buttons {
+        display: flex;
+        gap: 0.25rem;
+        margin-left: auto;
+    }
+
+    .feedback-btn {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s;
+    }
+
+    .feedback-btn:hover:not(:disabled) {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+
+    .feedback-btn.active-up {
+        color: #10b981;
+        background: rgba(16, 185, 129, 0.1);
+    }
+
+    .feedback-btn.active-down {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.1);
+    }
+
+    .feedback-btn:disabled {
+        cursor: default;
+    }
+
+    /* Typing Indicator */
+    .typing-indicator {
+        display: flex;
+        gap: 4px;
+        padding: 0.875rem 1rem;
+        background: white;
+        border-radius: 16px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .typing-indicator span {
+        width: 8px;
+        height: 8px;
+        background: #F59E0B;
+        border-radius: 50%;
+        animation: typing 1.4s infinite ease-in-out;
+    }
+
+    .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+    @@keyframes typing {
+        0%, 60%, 100% { transform: translateY(0); }
+        30% { transform: translateY(-8px); }
+    }
+
+    /* Chat Input */
+    .chat-input {
+        padding: 1rem;
+        border-top: 1px solid #e2e8f0;
+        background: white;
+    }
+
+    .input-wrapper {
+        display: flex;
+        align-items: flex-end;
+        gap: 0.5rem;
+        background: #f1f5f9;
+        border-radius: 12px;
+        padding: 0.5rem;
+    }
+
+    .input-wrapper textarea {
+        flex: 1;
+        border: none;
+        background: transparent;
+        resize: none;
+        font-size: 0.875rem;
+        line-height: 1.5;
+        padding: 0.5rem;
+        max-height: 100px;
+        font-family: inherit;
+        color: #1e293b;
+    }
+
+    .input-wrapper textarea:focus {
+        outline: none;
+    }
+
+    /* Dark mode textarea color override */
+    .theme-dark .input-wrapper textarea,
+    html.theme-dark .input-wrapper textarea {
+        color: #F5F5F5 !important;
+        -webkit-text-fill-color: #F5F5F5 !important;
+    }
+
+    .send-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: none;
+        background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+        color: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        flex-shrink: 0;
+    }
+
+    .send-btn:hover:not(:disabled) {
+        transform: scale(1.05);
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+    }
+
+    .send-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* FAB */
+    .chat-fab {
+        width: 56px;
+        height: 56px;
+        border-radius: 16px;
+        border: none;
+        background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+        color: white;
+        cursor: pointer;
+        box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s;
+    }
+
+    .chat-fab:hover {
+        transform: scale(1.05);
+        box-shadow: 0 6px 24px rgba(245, 158, 11, 0.5);
+    }
+
+    .chat-fab.hidden {
+        display: none;
+    }
+
+    .fab-inner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .unread-badge {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        min-width: 20px;
+        height: 20px;
+        background: #ef4444;
+        color: white;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 6px;
+    }
+
+    .fab-tooltip {
+        position: absolute;
+        bottom: 70px;
+        right: 0;
+        background: #1e293b;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-size: 0.8125rem;
+        white-space: nowrap;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.2s;
+    }
+
+    .chat-widget:hover .fab-tooltip {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    /* Responsive */
+    @@media (max-width: 480px) {
+        .chat-container {
+            width: calc(100vw - 2rem);
+            height: calc(100vh - 6rem);
+        }
+    }
+
+    /* Scrollbar */
+    .chat-messages::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .chat-messages::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+    }
+
+    /* Fullscreen layout improvements */
+    .chat-widget.fullscreen .chat-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .chat-widget.fullscreen .chat-messages {
+        max-width: 800px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .chat-widget.fullscreen .chat-input {
+        max-width: 800px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 1rem 2rem 2rem;
+        background: transparent;
+        border-top: none;
+    }
+
+    .chat-widget.fullscreen .input-wrapper {
+        max-width: 100%;
+        background: white;
+        border: 1px solid #e2e8f0;
+    }
+
+    /* Dark mode fullscreen */
+    :global(html.theme-dark) .chat-widget.fullscreen .chat-input {
+        background: transparent;
+    }
+
+    :global(html.theme-dark) .chat-widget.fullscreen .input-wrapper {
+        background: #2D2D2D;
+        border: 1px solid #3D3D3D;
+    }
+
+    /* Dark mode styles */
+    :global(html.theme-dark) .chat-container {
+        background: #1E1E1E;
+    }
+
+    :global(html.theme-dark) .chat-messages {
+        background: #1E1E1E;
+    }
+
+    :global(html.theme-dark) .chat-input {
+        background: #1A1A1A;
+        border-top-color: #3D3D3D;
+    }
+
+    :global(html.theme-dark) .input-wrapper {
+        background: #2D2D2D;
+        border: 1px solid #3D3D3D;
+    }
+
+    :global(html.theme-dark) .input-wrapper textarea,
+    :global(html.theme-dark) .chat-input textarea,
+    :global(html.theme-dark) .chat-widget textarea {
+        color: #F5F5F5 !important;
+        -webkit-text-fill-color: #F5F5F5 !important;
+    }
+
+    :global(html.theme-dark) .input-wrapper textarea::placeholder {
+        color: #737373;
+        -webkit-text-fill-color: #737373;
+    }
+
+    :global(html.theme-dark) .message.assistant .message-text {
+        background: #2D2D2D;
+        color: #F5F5F5;
+        border-color: #3D3D3D;
+    }
+
+    :global(html.theme-dark) .welcome-message h4 {
+        color: #F5F5F5;
+    }
+
+    :global(html.theme-dark) .welcome-message p {
+        color: #A3A3A3;
+    }
+
+    :global(html.theme-dark) .chip {
+        background: #2D2D2D;
+        border-color: #3D3D3D;
+        color: #F5F5F5;
+    }
+
+    :global(html.theme-dark) .chip:hover {
+        background: #3D2A10;
+        border-color: #F59E0B;
+        color: #F59E0B;
+    }
+
+    :global(html.theme-dark) .message-time {
+        color: #737373;
+    }
+
+    :global(html.theme-dark) .typing-indicator {
+        background: #2D2D2D;
+        border-color: #3D3D3D;
+    }
+
+    /* Voice Button */
+    .voice-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+        background: #f1f5f9;
+        color: #64748b;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        flex-shrink: 0;
+    }
+
+    .voice-btn:hover:not(:disabled) {
+        background: #FEF3C7;
+        border-color: #F59E0B;
+        color: #D97706;
+    }
+
+    .voice-btn.recording {
+        background: #fecaca;
+        border-color: #ef4444;
+        color: #ef4444;
+        animation: pulse-recording 1s infinite;
+    }
+
+    .voice-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    @@keyframes pulse-recording {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+    }
+
+    .voice-error {
+        padding: 0.5rem 1rem;
+        background: #fef2f2;
+        color: #dc2626;
+        font-size: 0.75rem;
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+    }
+
+    :global(html.theme-dark) .voice-btn,
+    :global(.theme-dark) .voice-btn {
+        background: #2D2D2D !important;
+        border-color: #3D3D3D !important;
+        color: #A3A3A3 !important;
+    }
+
+    :global(html.theme-dark) .voice-btn:hover:not(:disabled),
+    :global(.theme-dark) .voice-btn:hover:not(:disabled) {
+        background: #3D2A10 !important;
+        border-color: #F59E0B !important;
+        color: #F59E0B !important;
+    }
+
+    :global(html.theme-dark) .voice-btn.recording,
+    :global(.theme-dark) .voice-btn.recording {
+        background: #7f1d1d !important;
+        border-color: #ef4444 !important;
+        color: #fca5a5 !important;
+    }
+
+    :global(html.theme-dark) .voice-error,
+    :global(.theme-dark) .voice-error {
+        background: #450a0a !important;
+        color: #fca5a5 !important;
+    }
+
+    /* Suggestions */
+    .suggestions-container {
+        padding: 1rem;
+        border-top: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+
+    .suggestions-label {
+        display: block;
+        font-size: 0.75rem;
+        color: #64748b;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+
+    .suggestions-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .suggestion-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.5rem 0.75rem;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 0.8125rem;
+        color: #475569;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .suggestion-btn:hover {
+        background: #FEF3C7;
+        border-color: #F59E0B;
+        color: #D97706;
+    }
+
+    .suggestion-btn svg {
+        flex-shrink: 0;
+        color: #F59E0B;
+        stroke: #F59E0B;
+    }
+
+    .suggestion-btn:hover svg {
+        color: #D97706;
+        stroke: #D97706;
+    }
+
+    :global(html.theme-dark) .suggestions-container,
+    :global(.theme-dark) .suggestions-container {
+        background: #1A1A1A !important;
+        border-top-color: #3D3D3D !important;
+    }
+
+    :global(html.theme-dark) .suggestions-label,
+    :global(.theme-dark) .suggestions-label {
+        color: #A3A3A3 !important;
+    }
+
+    :global(html.theme-dark) .suggestion-btn,
+    :global(.theme-dark) .suggestion-btn {
+        background: #2D2D2D !important;
+        border-color: #3D3D3D !important;
+        color: #F5F5F5 !important;
+    }
+
+    :global(html.theme-dark) .suggestion-btn svg,
+    :global(.theme-dark) .suggestion-btn svg {
+        color: #F59E0B !important;
+        stroke: #F59E0B !important;
+    }
+
+    :global(html.theme-dark) .suggestion-btn:hover,
+    :global(.theme-dark) .suggestion-btn:hover {
+        background: #3D2A10 !important;
+        border-color: #F59E0B !important;
+        color: #FBBF24 !important;
+    }
+
+    :global(html.theme-dark) .suggestion-btn:hover svg,
+    :global(.theme-dark) .suggestion-btn:hover svg {
+        color: #FBBF24 !important;
+        stroke: #FBBF24 !important;
+    }
+
+    /* Charts */
+    .chart-container {
+        margin: 1rem 0;
+        padding: 1rem;
+        background: white;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .chart-container canvas {
+        max-height: 250px;
+        width: 100% !important;
+    }
+
+    :global(html.theme-dark) .chart-container {
+        background: #2D2D2D;
+        border-color: #3D3D3D;
+    }
+
+    /* Tables in chat */
+    .chat-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0.75rem 0;
+        font-size: 0.8125rem;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .chat-table th,
+    .chat-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .chat-table th {
+        background: #f1f5f9;
+        font-weight: 600;
+        color: #475569;
+    }
+
+    .chat-table td {
+        color: #334155;
+    }
+
+    .chat-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    :global(html.theme-dark) .chat-table th {
+        background: #3D3D3D;
+        color: #F5F5F5;
+    }
+
+    :global(html.theme-dark) .chat-table td {
+        color: #F5F5F5;
+        border-bottom-color: #3D3D3D;
+    }
+
+    :global(html.theme-dark) .chat-table th,
+    :global(html.theme-dark) .chat-table td {
+        border-bottom-color: #3D3D3D;
+    }
+</style>
+
+@code {
+    private bool _isOpen = false;
+    private bool _isFullscreen = false;
+    private bool _isLoading = false;
+    private string _inputMessage = "";
+    private List<ChatMessage> _messages = new();
+    private ElementReference _messagesContainer;
+    private int _unreadCount = 0;
+    private Guid? _sessionId = null;
+    private string _userId = "current-user";
+    private DotNetObjectReference<ChatWidget>? _dotNetRef;
+    private bool _isVoiceRecording = false;
+    private bool _voiceSupported = false;
+    private string _voiceError = "";
+    private List<SuggestedQuestionDto> _currentSuggestions = new();
+    private int _chartCounter = 0;
+
+    private class ChatMessage
+    {
+        public string Content { get; set; } = "";
+        public string RenderedContent { get; set; } = "";
+        public bool IsUser { get; set; }
+        public DateTime Timestamp { get; set; } = DateTime.Now;
+        public long MessageId { get; set; }
+        public int Feedback { get; set; } = 0;
+        public List<ChartData> Charts { get; set; } = new();
+    }
+
+    private class ChartData
+    {
+        public string Id { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string JsonData { get; set; } = "";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            try
+            {
+                _voiceSupported = await JSRuntime.InvokeAsync<bool>("VoiceRecognition.isSupported");
+                if (_voiceSupported)
+                {
+                    await JSRuntime.InvokeVoidAsync("VoiceRecognition.initialize", _dotNetRef);
+                }
+            }
+            catch
+            {
+                _voiceSupported = false;
+            }
+            StateHasChanged();
+        }
+
+        // Render any pending charts
+        foreach (var message in _messages.Where(m => !m.IsUser && m.Charts.Any()))
+        {
+            foreach (var chart in message.Charts)
+            {
+                await RenderChart(chart);
+            }
+        }
+    }
+
+    private void ToggleChat()
+    {
+        _isOpen = !_isOpen;
+        if (_isOpen)
+        {
+            _unreadCount = 0;
+        }
+        else
+        {
+            _isFullscreen = false;
+        }
+    }
+
+    private void ToggleFullscreen()
+    {
+        _isFullscreen = !_isFullscreen;
+    }
+
+    private async Task StartNewSession()
+    {
+        _sessionId = null;
+        _messages.Clear();
+        _currentSuggestions.Clear();
+        _chartCounter = 0;
+        StateHasChanged();
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendSuggestion(string suggestion)
+    {
+        _inputMessage = suggestion;
+        await SendMessage();
+    }
+
+    private async Task ToggleVoice()
+    {
+        if (!_voiceSupported) return;
+
+        try
+        {
+            if (_isVoiceRecording)
+            {
+                await JSRuntime.InvokeVoidAsync("VoiceRecognition.stop");
+            }
+            else
+            {
+                _voiceError = "";
+                await JSRuntime.InvokeVoidAsync("VoiceRecognition.start");
+            }
+        }
+        catch (Exception ex)
+        {
+            _voiceError = "Voice recognition error";
+            Console.WriteLine($"Voice error: {ex.Message}");
+        }
+    }
+
+    [JSInvokable]
+    public void OnVoiceStart()
+    {
+        _isVoiceRecording = true;
+        _voiceError = "";
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnVoiceResult(string transcript, bool isFinal)
+    {
+        _inputMessage = transcript;
+        StateHasChanged();
+
+        if (isFinal && !string.IsNullOrWhiteSpace(transcript))
+        {
+            InvokeAsync(SendMessage);
+        }
+    }
+
+    [JSInvokable]
+    public void OnVoiceError(string error)
+    {
+        _voiceError = error;
+        _isVoiceRecording = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnVoiceEnd()
+    {
+        _isVoiceRecording = false;
+        StateHasChanged();
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_inputMessage) || _isLoading)
+            return;
+
+        var userMessage = _inputMessage.Trim();
+        _inputMessage = "";
+        _isLoading = true;
+        _currentSuggestions.Clear();
+
+        _messages.Add(new ChatMessage
+        {
+            Content = userMessage,
+            RenderedContent = userMessage,
+            IsUser = true,
+            Timestamp = DateTime.Now
+        });
+
+        StateHasChanged();
+        await ScrollToBottom();
+
+        try
+        {
+            var request = new ChatSessionRequest
+            {
+                Message = userMessage,
+                SessionId = _sessionId,
+                UserId = _userId
+            };
+
+            var response = await ChatService.SendSessionMessageAsync(request);
+
+            if (response != null && response.Success)
+            {
+                _sessionId = response.SessionId;
+
+                // Parse charts from the response
+                var (cleanContent, charts) = ParseChartsFromContent(response.Response ?? "");
+
+                var assistantMessage = new ChatMessage
+                {
+                    Content = response.Response ?? "",
+                    RenderedContent = FormatMessage(cleanContent),
+                    IsUser = false,
+                    Timestamp = DateTime.Now,
+                    MessageId = response.MessageId,
+                    Charts = charts
+                };
+
+                _messages.Add(assistantMessage);
+
+                // Update suggestions
+                if (response.SuggestedQuestions?.Any() == true)
+                {
+                    _currentSuggestions = response.SuggestedQuestions;
+                }
+            }
+            else
+            {
+                _messages.Add(new ChatMessage
+                {
+                    Content = response?.Error ?? "I received an empty response. Please try again.",
+                    RenderedContent = response?.Error ?? "I received an empty response. Please try again.",
+                    IsUser = false,
+                    Timestamp = DateTime.Now
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Chat error: {ex.Message}");
+            _messages.Add(new ChatMessage
+            {
+                Content = "I'm having trouble connecting right now. Please try again in a moment.",
+                RenderedContent = "I'm having trouble connecting right now. Please try again in a moment.",
+                IsUser = false,
+                Timestamp = DateTime.Now
+            });
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+            await ScrollToBottom();
+        }
+    }
+
+    private (string CleanContent, List<ChartData> Charts) ParseChartsFromContent(string content)
+    {
+        var charts = new List<ChartData>();
+        var cleanContent = content;
+
+        // Parse chart blocks: ---CHART:type--- ... ---END_CHART---
+        var chartRegex = new System.Text.RegularExpressions.Regex(
+            @"---CHART:(\w+)---\s*(\{[\s\S]*?\})\s*---END_CHART---",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        var matches = chartRegex.Matches(content);
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            _chartCounter++;
+            var chartId = $"chat-chart-{_chartCounter}";
+            var chartType = match.Groups[1].Value.ToLower();
+            var chartJson = match.Groups[2].Value;
+
+            charts.Add(new ChartData
+            {
+                Id = chartId,
+                Type = chartType,
+                JsonData = chartJson
+            });
+
+            // Replace chart block with a canvas placeholder
+            cleanContent = cleanContent.Replace(match.Value, 
+                $"<div class=\"chart-container\"><canvas id=\"{chartId}\"></canvas></div>");
+        }
+
+        return (cleanContent, charts);
+    }
+
+    private async Task RenderChart(ChartData chart)
+    {
+        try
+        {
+            var methodName = chart.Type switch
+            {
+                "bar" => "ChatCharts.createBarChart",
+                "hbar" => "ChatCharts.createHorizontalBarChart",
+                "line" => "ChatCharts.createLineChart",
+                "pie" => "ChatCharts.createPieChart",
+                "gauge" => "ChatCharts.createGaugeChart",
+                _ => "ChatCharts.createBarChart"
+            };
+
+            await JSRuntime.InvokeVoidAsync("eval", 
+                $"if(document.getElementById('{chart.Id}')) {{ {methodName}('{chart.Id}', {chart.JsonData}); }}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Chart render error: {ex.Message}");
+        }
+    }
+
+    private async Task ScrollToBottom()
+    {
+        await Task.Delay(50);
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("eval",
+                "document.querySelector('.chat-messages')?.scrollTo({ top: document.querySelector('.chat-messages')?.scrollHeight, behavior: 'smooth' })");
+        }
+        catch { }
+    }
+
+    private async Task SubmitFeedback(ChatMessage message, int rating)
+    {
+        if (message.Feedback != 0)
+            return;
+
+        try
+        {
+            var feedback = new ChatFeedbackRequest
+            {
+                MessageId = message.MessageId,
+                SessionId = _sessionId ?? Guid.Empty,
+                UserId = _userId,
+                Rating = rating
+            };
+
+            message.Feedback = rating;
+            StateHasChanged();
+
+            await ChatService.SubmitFeedbackAsync(feedback);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Feedback error: {ex.Message}");
+        }
+    }
+
+    private string FormatMessage(string content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return "";
+
+        // Basic markdown-like formatting
+        content = System.Text.RegularExpressions.Regex.Replace(content, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        content = System.Text.RegularExpressions.Regex.Replace(content, @"\*(.+?)\*", "<em>$1</em>");
+        
+        // Format tables (simple markdown tables)
+        content = FormatTables(content);
+        
+        content = content.Replace("\n", "<br>");
+
+        return content;
+    }
+
+    private string FormatTables(string content)
+    {
+        // Match markdown tables
+        var tableRegex = new System.Text.RegularExpressions.Regex(
+            @"(\|.+\|[\r\n]+\|[-:\|\s]+\|[\r\n]+(?:\|.+\|[\r\n]*)+)",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        return tableRegex.Replace(content, match =>
+        {
+            var lines = match.Value.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            if (lines.Length < 2) return match.Value;
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("<table class=\"chat-table\">");
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                if (line.StartsWith("|") && line.EndsWith("|"))
+                {
+                    // Skip separator line
+                    if (line.Contains("---") || line.Contains(":-")) continue;
+
+                    var cells = line.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    var tag = i == 0 ? "th" : "td";
+                    sb.Append("<tr>");
+                    foreach (var cell in cells)
+                    {
+                        sb.Append($"<{tag}>{cell.Trim()}</{tag}>");
+                    }
+                    sb.Append("</tr>");
+                }
+            }
+
+            sb.Append("</table>");
+            return sb.ToString();
+        });
+    }
+
+    private string GetSuggestionIcon(string? iconName)
+    {
+        return (iconName?.ToLower() ?? "help") switch
+        {
+            "warning" => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z""></path><line x1=""12"" y1=""9"" x2=""12"" y2=""13""></line><line x1=""12"" y1=""17"" x2=""12.01"" y2=""17""></line></svg>",
+            "location_city" or "building" => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M3 21h18""></path><path d=""M9 8h1""></path><path d=""M9 12h1""></path><path d=""M9 16h1""></path><path d=""M14 8h1""></path><path d=""M14 12h1""></path><path d=""M14 16h1""></path><path d=""M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16""></path></svg>",
+            "trending_up" or "chart" => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><polyline points=""23 6 13.5 15.5 8.5 10.5 1 18""></polyline><polyline points=""17 6 23 6 23 12""></polyline></svg>",
+            "trending_down" => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><polyline points=""23 18 13.5 8.5 8.5 13.5 1 6""></polyline><polyline points=""17 18 23 18 23 12""></polyline></svg>",
+            "person" => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><path d=""M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2""></path><circle cx=""12"" cy=""7"" r=""4""></circle></svg>",
+            "category" => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><rect x=""3"" y=""3"" width=""7"" height=""7""></rect><rect x=""14"" y=""3"" width=""7"" height=""7""></rect><rect x=""14"" y=""14"" width=""7"" height=""7""></rect><rect x=""3"" y=""14"" width=""7"" height=""7""></rect></svg>",
+            "search" => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><circle cx=""11"" cy=""11"" r=""8""></circle><line x1=""21"" y1=""21"" x2=""16.65"" y2=""16.65""></line></svg>",
+            "compare_arrows" => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><polyline points=""18 8 22 12 18 16""></polyline><polyline points=""6 8 2 12 6 16""></polyline><line x1=""2"" y1=""12"" x2=""22"" y2=""12""></line></svg>",
+            _ => @"<svg width=""16"" height=""16"" viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round""><circle cx=""12"" cy=""12"" r=""10""></circle><path d=""M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3""></path><line x1=""12"" y1=""17"" x2=""12.01"" y2=""17""></line></svg>"
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_dotNetRef != null)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("VoiceRecognition.dispose");
+            }
+            catch { }
+            _dotNetRef.Dispose();
+        }
+    }
+}

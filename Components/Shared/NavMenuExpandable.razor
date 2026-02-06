@@ -1,0 +1,86 @@
+<div class="nav-expandable">
+    <div class="nav-expandable-header @(isExpanded ? "expanded" : "")" @onclick="Toggle">
+        <RadzenIcon Icon="@Icon" class="nav-icon" />
+        <span>@Text</span>
+        <RadzenIcon Icon="expand_more" class="nav-arrow" />
+    </div>
+    <div class="nav-expandable-content @(isExpanded ? "show" : "")">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "folder";
+    [Parameter] public string Text { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public bool DefaultExpanded { get; set; } = false;
+
+    private bool isExpanded;
+
+    protected override void OnInitialized()
+    {
+        isExpanded = DefaultExpanded;
+    }
+
+    private void Toggle()
+    {
+        isExpanded = !isExpanded;
+    }
+}
+
+<style>
+    .nav-expandable {
+        margin: 2px 0;
+    }
+
+    .nav-expandable-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0.625rem 1.25rem;
+        color: var(--sidebar-text);
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        border-left: 3px solid transparent;
+    }
+
+    .nav-expandable-header:hover {
+        background: var(--sidebar-hover);
+        color: #F1F5F9;
+    }
+
+    .nav-expandable-header.expanded {
+        color: #F1F5F9;
+    }
+
+    .nav-arrow {
+        margin-left: auto;
+        font-size: 1rem;
+        transition: transform 0.2s ease;
+        opacity: 0.6;
+    }
+
+    .nav-expandable-header.expanded .nav-arrow {
+        transform: rotate(180deg);
+    }
+
+    .nav-expandable-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+        background: rgba(0, 0, 0, 0.15);
+        border-left: 1px solid rgba(255, 255, 255, 0.05);
+        margin-left: 1rem;
+    }
+
+    .nav-expandable-content.show {
+        max-height: 500px;
+    }
+
+    .nav-expandable-content :deep(.nav-item) {
+        padding-left: 2rem;
+        font-size: 0.8125rem;
+    }
+</style>

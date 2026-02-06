@@ -1,0 +1,661 @@
+@page "/variancereport"
+@inject IRiskService RiskService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Variance Report - Apollo Risk</PageTitle>
+
+<div class="variance-report-page">
+    <div class="page-header">
+        <div class="header-content">
+            <div class="header-icon">
+                <RadzenIcon Icon="compare_arrows" />
+            </div>
+            <div>
+                <h1>Variance Report</h1>
+                <p>Track risk score changes over time</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <RadzenButton Icon="print" Text="Print" ButtonStyle="ButtonStyle.Light" Click="@OnPrintReport" />
+            <RadzenButton Icon="file_download" Text="Export" ButtonStyle="ButtonStyle.Secondary" Click="@OnExportReport" />
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-card">
+        <div class="filter-grid">
+            <div class="filter-item">
+                <label>Site</label>
+                <RadzenDropDown @bind-Value="@selectedSiteId"
+                                Data="@sites"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Sites"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 100%;" />
+            </div>
+            <div class="filter-item">
+                <label>Service</label>
+                <RadzenDropDown @bind-Value="@selectedServiceId"
+                                Data="@services"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Services"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 100%;" />
+            </div>
+            <div class="filter-item">
+                <label>Category</label>
+                <RadzenDropDown @bind-Value="@selectedCategoryId"
+                                Data="@categories"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Categories"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 100%;" />
+            </div>
+            <div class="filter-item">
+                <label>Date Range</label>
+                <RadzenDatePicker @bind-Value="@startDate"
+                                  DateFormat="MMM yyyy"
+                                  ShowCalendarWeek="false"
+                                  Style="width: 100%;" />
+            </div>
+            <div class="filter-item">
+                <label>To</label>
+                <RadzenDatePicker @bind-Value="@endDate"
+                                  DateFormat="MMM yyyy"
+                                  ShowCalendarWeek="false"
+                                  Style="width: 100%;" />
+            </div>
+            <div class="filter-item filter-actions">
+                <RadzenButton Icon="search" Text="Apply" ButtonStyle="ButtonStyle.Primary" Click="@OnApplyFilters" />
+                <RadzenButton Icon="refresh" Text="Reset" ButtonStyle="ButtonStyle.Light" Click="@OnResetFilters" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="summary-grid">
+        <div class="summary-card improved">
+            <div class="summary-icon">
+                <RadzenIcon Icon="trending_down" />
+            </div>
+            <div class="summary-content">
+                <span class="summary-value">@improvedCount</span>
+                <span class="summary-label">Improved</span>
+            </div>
+        </div>
+        <div class="summary-card stable">
+            <div class="summary-icon">
+                <RadzenIcon Icon="remove" />
+            </div>
+            <div class="summary-content">
+                <span class="summary-value">@stableCount</span>
+                <span class="summary-label">Stable</span>
+            </div>
+        </div>
+        <div class="summary-card worsened">
+            <div class="summary-icon">
+                <RadzenIcon Icon="trending_up" />
+            </div>
+            <div class="summary-content">
+                <span class="summary-value">@worsenedCount</span>
+                <span class="summary-label">Worsened</span>
+            </div>
+        </div>
+        <div class="summary-card total">
+            <div class="summary-icon">
+                <RadzenIcon Icon="assessment" />
+            </div>
+            <div class="summary-content">
+                <span class="summary-value">@totalRisks</span>
+                <span class="summary-label">Total Risks</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Variance Table -->
+    <div class="data-card">
+        <div class="card-header">
+            <h3>Risk Score Variance</h3>
+            <div class="card-actions">
+                <RadzenTextBox @bind-Value="@searchText"
+                               Placeholder="Search risks..."
+                               Change="@OnSearchChanged"
+                               Style="width: 250px;" />
+            </div>
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="loading-container">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                <span>Loading variance data...</span>
+            </div>
+        }
+        else
+        {
+            <RadzenDataGrid @ref="varianceGrid"
+                            Data="@filteredVarianceData"
+                            TItem="VarianceReportItemDto"
+                            AllowFiltering="true"
+                            AllowSorting="true"
+                            AllowPaging="true"
+                            PageSize="15"
+                            PagerHorizontalAlign="HorizontalAlign.Center"
+                            ShowPagingSummary="true"
+                            FilterMode="FilterMode.Simple"
+                            Class="risk-data-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="VarianceReportItemDto" Property="RiskName" Title="Risk" Width="250px" Frozen="true">
+                        <Template Context="item">
+                            <div class="risk-name-cell">
+                                <span class="risk-name">@item.RiskName</span>
+                                <span class="risk-meta">@item.SiteName - @item.CategoryName</span>
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VarianceReportItemDto" Property="OwnerName" Title="Owner" Width="150px" />
+                    <RadzenDataGridColumn TItem="VarianceReportItemDto" Property="PreviousScore" Title="Previous" Width="100px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="score-badge @GetScoreClass(item.PreviousScore)">@item.PreviousScore.ToString("F1")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VarianceReportItemDto" Property="CurrentScore" Title="Current" Width="100px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="score-badge @GetScoreClass(item.CurrentScore)">@item.CurrentScore.ToString("F1")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VarianceReportItemDto" Property="Variance" Title="Variance" Width="120px" TextAlign="TextAlign.Center" Sortable="true">
+                        <Template Context="item">
+                            <div class="variance-cell @GetVarianceClass(item.Variance)">
+                                @if (item.Variance > 0)
+                                {
+                                    <RadzenIcon Icon="arrow_upward" />
+                                    <span>+@item.Variance.ToString("F1")</span>
+                                }
+                                else if (item.Variance < 0)
+                                {
+                                    <RadzenIcon Icon="arrow_downward" />
+                                    <span>@item.Variance.ToString("F1")</span>
+                                }
+                                else
+                                {
+                                    <RadzenIcon Icon="remove" />
+                                    <span>0.0</span>
+                                }
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VarianceReportItemDto" Property="VariancePercent" Title="% Change" Width="100px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="@GetVarianceClass(item.Variance)">
+                                @(item.VariancePercent.ToString("F1"))%
+                            </span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VarianceReportItemDto" Property="CurrentRAG" Title="Status" Width="100px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="rag-badge @(item.CurrentRAG?.ToLower() ?? "unknown")">@(item.CurrentRAG ?? "N/A")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="VarianceReportItemDto" Property="LastUpdated" Title="Last Updated" Width="130px" FormatString="{0:dd MMM yyyy}" />
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </div>
+
+    <!-- Help Section -->
+    <DynamicHelpSection PageKey="VarianceReport" ThresholdTitle="Variance Indicators" ShowPercentage="false" />
+</div>
+
+<style>
+    .variance-report-page {
+        padding: 0;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+        .page-header .header-content {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .page-header .header-icon {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary-color) 0%, #4f46e5 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .page-header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .page-header p {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+    .header-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .filter-card {
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 1rem;
+        align-items: end;
+    }
+
+    .filter-item label {
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+    }
+
+    .filter-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .summary-card {
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .summary-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .summary-card.improved .summary-icon {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success-color);
+    }
+
+    .summary-card.stable .summary-icon {
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--info-color);
+    }
+
+    .summary-card.worsened .summary-icon {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger-color);
+    }
+
+    .summary-card.total .summary-icon {
+        background: rgba(124, 58, 237, 0.1);
+        color: #7c3aed;
+    }
+
+    .summary-content {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .summary-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .summary-label {
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+    }
+
+    .data-card {
+        background: var(--card-bg);
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        overflow: hidden;
+        margin-bottom: 1.5rem;
+    }
+
+        .data-card .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+            .data-card .card-header h3 {
+                margin: 0;
+                font-size: 1rem;
+                font-weight: 600;
+            }
+
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        gap: 1rem;
+        color: var(--text-muted);
+    }
+
+    .risk-name-cell {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .risk-name {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .risk-meta {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .score-badge {
+        display: inline-flex;
+        padding: 0.25rem 0.5rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8125rem;
+    }
+
+        .score-badge.high {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        .score-badge.medium {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning-color);
+        }
+
+        .score-badge.low {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+        }
+
+    .variance-cell {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-weight: 600;
+    }
+
+        .variance-cell.improved {
+            color: var(--success-color);
+        }
+
+        .variance-cell.worsened {
+            color: var(--danger-color);
+        }
+
+        .variance-cell.stable {
+            color: var(--text-muted);
+        }
+
+    .improved {
+        color: var(--success-color);
+    }
+
+    .worsened {
+        color: var(--danger-color);
+    }
+
+    .stable {
+        color: var(--text-muted);
+    }
+
+    @@media (max-width: 768px) {
+        .filter-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .summary-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .page-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+    }
+
+    :global(html.theme-dark) .filter-card,
+    :global(html.theme-dark) .data-card,
+    :global(html.theme-dark) .summary-card {
+        background: #1e293b;
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .page-header h1,
+    :global(html.theme-dark) .card-header h3,
+    :global(html.theme-dark) .summary-value,
+    :global(html.theme-dark) .risk-name {
+        color: #f1f5f9;
+    }
+
+    :global(html.theme-dark) .page-header p,
+    :global(html.theme-dark) .filter-item label,
+    :global(html.theme-dark) .summary-label {
+        color: #94a3b8;
+    }
+</style>
+
+@code {
+    private RadzenDataGrid<VarianceReportItemDto>? varianceGrid;
+
+    private List<SiteDto> sites = new();
+    private List<ServiceDto> services = new();
+    private List<RiskCategoryDto> categories = new();
+    private List<VarianceReportItemDto> varianceData = new();
+    private List<VarianceReportItemDto> filteredVarianceData = new();
+    private List<VarianceTrendItem> trendData = new();
+
+    private int? selectedSiteId;
+    private int? selectedServiceId;
+    private int? selectedCategoryId;
+    private DateTime? startDate = DateTime.Now.AddMonths(-6);
+    private DateTime? endDate = DateTime.Now;
+    private string searchText = "";
+
+    private int improvedCount;
+    private int stableCount;
+    private int worsenedCount;
+    private int totalRisks;
+
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFilters();
+        await LoadData();
+    }
+
+    private async Task LoadFilters()
+    {
+        try
+        {
+            sites = await RiskService.GetSitesAsync() ?? new();
+            services = await RiskService.GetServicesAsync() ?? new();
+            categories = await RiskService.GetCategoriesAsync() ?? new();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading filters: {ex.Message}");
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            varianceData = await RiskService.GetVarianceReportAsync(
+                selectedSiteId,
+                selectedServiceId,
+                selectedCategoryId,
+                startDate,
+                endDate) ?? new();
+
+            FilterData();
+            CalculateSummary();
+            LoadTrendData();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading variance data: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FilterData()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            filteredVarianceData = varianceData;
+        }
+        else
+        {
+            filteredVarianceData = varianceData
+                .Where(v => (v.RiskName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                           (v.SiteName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                           (v.OwnerName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false))
+                .ToList();
+        }
+    }
+
+    private void CalculateSummary()
+    {
+        improvedCount = varianceData.Count(v => v.Variance < 0);
+        worsenedCount = varianceData.Count(v => v.Variance > 0);
+        stableCount = varianceData.Count(v => v.Variance == 0);
+        totalRisks = varianceData.Count;
+    }
+
+    private void LoadTrendData()
+    {
+        trendData = new List<VarianceTrendItem>();
+        var currentDate = startDate ?? DateTime.Now.AddMonths(-6);
+        var end = endDate ?? DateTime.Now;
+
+        while (currentDate <= end)
+        {
+            trendData.Add(new VarianceTrendItem
+                {
+                    Month = currentDate.ToString("MMM yyyy"),
+                    Improved = Random.Shared.Next(5, 15),
+                    Worsened = Random.Shared.Next(2, 10)
+                });
+            currentDate = currentDate.AddMonths(1);
+        }
+    }
+
+    private void OnFilterChanged(object value)
+    {
+        _ = LoadData();
+    }
+
+    private void OnSearchChanged(string value)
+    {
+        FilterData();
+    }
+
+    private async Task OnApplyFilters()
+    {
+        await LoadData();
+    }
+
+    private async Task OnResetFilters()
+    {
+        selectedSiteId = null;
+        selectedServiceId = null;
+        selectedCategoryId = null;
+        startDate = DateTime.Now.AddMonths(-6);
+        endDate = DateTime.Now;
+        searchText = "";
+        await LoadData();
+    }
+
+    private string GetScoreClass(decimal score)
+    {
+        if (score >= 7) return "high";
+        if (score >= 4) return "medium";
+        return "low";
+    }
+
+    private string GetVarianceClass(decimal variance)
+    {
+        if (variance < 0) return "improved";
+        if (variance > 0) return "worsened";
+        return "stable";
+    }
+
+    private async Task OnPrintReport()
+    {
+        await JSRuntime.InvokeVoidAsync("window.print");
+    }
+
+    private async Task OnExportReport()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Export functionality will be implemented");
+    }
+
+    private class VarianceTrendItem
+    {
+        public string Month { get; set; } = "";
+        public int Improved { get; set; }
+        public int Worsened { get; set; }
+    }
+}

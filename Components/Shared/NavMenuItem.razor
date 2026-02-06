@@ -1,0 +1,13 @@
+@using Microsoft.AspNetCore.Components.Routing
+
+<NavLink class="nav-item" href="@Href" Match="@Match">
+    <RadzenIcon Icon="@Icon" class="nav-icon" />
+    <span>@Text</span>
+</NavLink>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "circle";
+    [Parameter] public string Text { get; set; } = "";
+    [Parameter] public string Href { get; set; } = "";
+    [Parameter] public NavLinkMatch Match { get; set; } = NavLinkMatch.Prefix;
+}

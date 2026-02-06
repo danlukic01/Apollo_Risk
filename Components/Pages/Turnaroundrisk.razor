@@ -1,0 +1,2993 @@
+﻿@page "/turnaroundrisk"
+@inject IRiskService RiskService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Turnaround Risk - Apollo Risk</PageTitle>
+
+<div class="turnaround-risk-page">
+    <div class="page-header">
+        <div class="header-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+        </div>
+        <div class="header-content">
+            <h1>Turnaround Risk</h1>
+            <p>Risk by Site - View and monitor risk status across all sites</p>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+        <div class="filter-section">
+            <div class="service-tabs">
+                <button class="tab-btn @(selectedServiceId == null ? "active" : "")" @onclick="@(() => SelectService(null))">
+                    All Services
+                </button>
+                @foreach (var service in services)
+                {
+                    <button class="tab-btn @(selectedServiceId == service.Id ? "active" : "")" @onclick="@(() => SelectService(service.Id))">
+                        @service.Name
+                    </button>
+                }
+            </div>
+        </div>
+        <div class="filter-dropdowns">
+            <div class="filter-item">
+                <label>Domain</label>
+                <RadzenDropDown @bind-Value="selectedDomainId"
+                                Data="@domains"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Domains"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 180px;" />
+            </div>
+            <div class="filter-item">
+                <label>Facility</label>
+                <RadzenDropDown @bind-Value="selectedSiteId"
+                                Data="@filteredSites"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Facilities"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 180px;" />
+            </div>
+            <div class="filter-item">
+                <label>Owner</label>
+                <RadzenDropDown @bind-Value="selectedOwnerId"
+                                Data="@owners"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Owners"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 200px;" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Sub Header with toggles -->
+    <div class="sub-header">
+        <div class="sub-header-left">
+            <span class="section-icon">›</span>
+            <span class="section-title">Risk by Site</span>
+            <button class="btn-refresh" @onclick="OnRefreshClicked" title="Refresh data">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="sub-header-right">
+            <label class="toggle-label">
+                <RadzenCheckBox @bind-Value="showValues" Change="@OnToggleChanged" TValue="bool" />
+                <span>Show Values</span>
+            </label>
+            <label class="toggle-label">
+                <RadzenCheckBox @bind-Value="allSitesView" Change="@OnViewModeChanged" TValue="bool" />
+                <span>All Sites (Current Month - @currentMonthName)</span>
+            </label>
+            <div class="period-buttons">
+                <button class="period-btn @(selectedPeriod == 1 ? "active" : "")" @onclick="@(() => SelectPeriod(1))">1M</button>
+                <button class="period-btn @(selectedPeriod == 3 ? "active" : "")" @onclick="@(() => SelectPeriod(3))">3M</button>
+                <button class="period-btn @(selectedPeriod == 6 ? "active" : "")" @onclick="@(() => SelectPeriod(6))">6M</button>
+                <button class="period-btn @(selectedPeriod == 12 ? "active" : "")" @onclick="@(() => SelectPeriod(12))">12M</button>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="loading-container">
+            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+            <span>Loading risk data...</span>
+        </div>
+    }
+    else
+    {
+        @if (allSitesView)
+        {
+            <!-- ALL SITES VIEW - Risk Matrix -->
+            <div class="card">
+                <div class="risk-matrix-container">
+                    <table class="risk-matrix">
+                        <thead>
+                            <tr>
+                                <th class="risk-col">Risk</th>
+                                @foreach (var site in displaySites)
+                                {
+                                    <th class="site-col" title="@site.Name">@GetFacilityCode(site.Name)</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!matrixData.Any())
+                            {
+                                <tr>
+                                    <td colspan="@(displaySites.Count + 1)" class="no-data">No risk data found for the selected filters</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var serviceGroup in matrixData.GroupBy(r => r.ServiceName).OrderBy(g => g.Key))
+                                {
+                                    <tr class="service-header-row">
+                                        <td colspan="@(displaySites.Count + 1)" class="service-header">@serviceGroup.Key</td>
+                                    </tr>
+                                    @foreach (var risk in serviceGroup.OrderBy(r => r.RiskName))
+                                    {
+                                        <tr class="data-row">
+                                            <td class="risk-name">@risk.RiskName</td>
+                                            @foreach (var site in displaySites)
+                                            {
+                                                var siteRating = risk.SiteRatings.FirstOrDefault(sr => sr.SiteId == site.Id);
+                                                var ragValue = siteRating?.RAGRating ?? "";
+                                                var ragClass = GetRAGClass(ragValue);
+                                                var riskId = siteRating?.TRRiskId ?? 0;
+                                                var hasRisk = riskId > 0;
+                                                @if (hasRisk)
+                                                {
+                                                    var hasRating = !string.IsNullOrEmpty(ragValue);
+                                                    <td class="rag-cell @ragClass clickable @(!hasRating ? "no-rating" : "")"
+                                                        @onclick="@(async () => await OpenScoreEditor(riskId, risk.RiskName, site.Name))"
+                                                        title="@(hasRating ? "Click to edit score" : "Click to add score")">
+                                                        @if (showValues && hasRating)
+                                                        {
+                                                            <span class="rag-text">@FormatRAGDisplay(ragValue)</span>
+                                                        }
+                                                        else if (!hasRating)
+                                                        {
+                                                            <span class="add-score-hint">+</span>
+                                                        }
+                                                    </td>
+                                                }
+                                                else
+                                                {
+                                                    <td class="rag-cell empty-cell" title="No risk defined for this site">
+                                                        <span class="no-risk-indicator">—</span>
+                                                    </td>
+                                                }
+                                            }
+                                        </tr>
+                                    }
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- SITE DRILL-DOWN VIEW -->
+            <div class="card">
+                <div class="site-drilldown-container">
+                    <table class="site-drilldown">
+                        <thead>
+                            <tr>
+                                <th class="site-col-header">Facility</th>
+                                @foreach (var month in periodMonths)
+                                {
+                                    <th class="month-col-header">@month.ToString("MMM")</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var site in displaySites)
+                            {
+                                var siteData = drilldownData.FirstOrDefault(d => d.SiteId == site.Id);
+                                var isExpanded = expandedSites.Contains(site.Id);
+
+                                <tr class="site-row @(isExpanded ? "expanded" : "")">
+                                    <td class="site-name-cell">
+                                        <button class="expand-btn" @onclick="@(() => ToggleSiteExpand(site.Id))">
+                                            <span class="expand-icon">@(isExpanded ? "▼" : "▶")</span>
+                                            <span class="site-label">@site.Name</span>
+                                        </button>
+                                    </td>
+                                    @foreach (var month in periodMonths)
+                                    {
+                                        var monthData = siteData?.MonthlyData.FirstOrDefault(m => m.Month.Month == month.Month && m.Month.Year == month.Year);
+                                        var complianceRate = monthData?.ComplianceRate ?? 0;
+                                        var ragClass = GetComplianceRAGClass(complianceRate);
+                                        <td class="score-cell @ragClass">
+                                            @if (showValues)
+                                            {
+                                                @if (monthData?.TotalRisks > 0)
+                                                {
+                                                    <span>@complianceRate%</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>-</span>
+                                                }
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+
+                                @if (isExpanded && siteData?.Risks != null && siteData.Risks.Any())
+                                {
+                                    <!-- Expanded Risk Details -->
+                                    <tr class="detail-container-row">
+                                        <td colspan="@(periodMonths.Count + 1)" class="detail-container-cell">
+                                            <div class="detail-table-wrapper">
+                                                <table class="detail-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th class="detail-risk-col">Risk</th>
+                                                            <th class="detail-owner-col">Owner</th>
+                                                            @foreach (var month in periodMonths)
+                                                            {
+                                                                <th class="detail-month-col">@month.ToString("MMM")</th>
+                                                            }
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var serviceGroup in siteData.Risks.GroupBy(r => r.ServiceName).OrderBy(g => g.Key))
+                                                        {
+                                                            <tr class="detail-service-row">
+                                                                <td colspan="@(periodMonths.Count + 2)" class="detail-service-header">@serviceGroup.Key</td>
+                                                            </tr>
+                                                            @foreach (var risk in serviceGroup.OrderBy(r => r.RiskName))
+                                                            {
+                                                                <tr class="detail-data-row">
+                                                                    <td class="detail-risk-name">@risk.RiskName</td>
+                                                                    <td class="detail-owner-name">@risk.OwnerName</td>
+                                                                    @foreach (var month in periodMonths)
+                                                                    {
+                                                                        var monthRating = risk.MonthlyRatings.FirstOrDefault(m => m.Month.Month == month.Month && m.Month.Year == month.Year);
+                                                                        var ragValue = monthRating?.RAGRating ?? "";
+                                                                        var hasRating = !string.IsNullOrEmpty(ragValue) && ragValue != "-";
+                                                                        var ragClass = hasRating ? GetRAGClass(ragValue) : "";
+                                                                        <td class="detail-rag-cell @ragClass clickable @(!hasRating ? "no-rating" : "")"
+                                                                            @onclick="@(async () => await OpenScoreEditorForMonth(risk.TRRiskId, risk.RiskName, site.Name, month))"
+                                                                            title="@(hasRating ? "Click to edit score" : "Click to add score")">
+                                                                            @if (hasRating && showValues)
+                                                                            {
+                                                                                <span>@FormatRAGDisplay(ragValue)</span>
+                                                                            }
+                                                                            else if (!hasRating)
+                                                                            {
+                                                                                <span class="add-score-hint">+</span>
+                                                                            }
+                                                                        </td>
+                                                                    }
+                                                                </tr>
+                                                            }
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                                <div class="add-risk-row">
+                                                    <button class="btn-add-risk" @onclick="@(() => OpenCreateRiskDialogForSite(site.Id, site.Name))">
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                                                        </svg>
+                                                        <span>Add Risk to @site.Name</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                                else if (isExpanded)
+                                {
+                                    <tr class="detail-container-row">
+                                        <td colspan="@(periodMonths.Count + 1)" class="no-risks-cell">
+                                            <div class="no-risks-content">
+                                                <span>No risks found for this facility</span>
+                                                <button class="btn-add-risk" @onclick="@(() => OpenCreateRiskDialogForSite(site.Id, site.Name))">
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                                    </svg>
+                                                    <span>Add Risk</span>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+
+    <!-- Score Edit Modal -->
+    @if (showScoreDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseScoreDialog">
+            <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>@(isNewScore ? "Add Score" : "Update Score")</h3>
+                    <button class="modal-close" @onclick="CloseScoreDialog">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    @if (scoreRequest.TRRiskId == 0 && !string.IsNullOrEmpty(saveError))
+                    {
+                        @* No risk exists - show error message only *@
+                        <div class="no-risk-message">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="8" x2="12" y2="12"></line>
+                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                            </svg>
+                            <h4>No Risk Record Found</h4>
+                            <p>@saveError</p>
+                            <p class="hint">To add a score here, first create a risk record for this combination in the Risk Management section.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="score-info">
+                            <div class="info-row">
+                                <span class="info-label">Risk:</span>
+                                <span class="info-value">@editingRiskName</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Facility:</span>
+                                <span class="info-value">@editingFacilityName</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Period:</span>
+                                <span class="info-value">@editingMonth.ToString("MMMM yyyy")</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Current Rating:</span>
+                                <span class="info-value">
+                                    @if (!string.IsNullOrEmpty(currentRAGRating))
+                                    {
+                                        <span class="current-rag-badge @GetRAGClass(currentRAGRating)">@FormatRAGDisplay(currentRAGRating)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="no-rating">Not rated</span>
+                                    }
+                                </span>
+                            </div>
+                        </div>
+
+                        @* Threshold Preview *@
+                        @if (editingThreshold != null)
+                        {
+                            <div class="threshold-section">
+                                <label>Threshold Ranges</label>
+                                <div class="threshold-preview-bar">
+                                    <div class="threshold-segment green" style="flex: @editingThreshold.GreenMax;">
+                                        <span>Green (0-@editingThreshold.GreenMax.ToString("0.#"))</span>
+                                    </div>
+                                    <div class="threshold-segment amber" style="flex: @((editingThreshold.AmberMax - editingThreshold.GreenMax));">
+                                        <span>Amber (@editingThreshold.GreenMax.ToString("0.#")-@editingThreshold.AmberMax.ToString("0.#"))</span>
+                                    </div>
+                                    <div class="threshold-segment red" style="flex: @(Math.Max(20, 100 - editingThreshold.AmberMax));">
+                                        <span>Red (>@editingThreshold.AmberMax.ToString("0.#"))</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @* Score Required Mode (with threshold) *@
+                            <div class="form-group">
+                                <label>Score *</label>
+                                <RadzenNumeric @bind-Value="scoreRequest.Score" Min="0" Max="999" Style="width: 100%;"
+                                               Placeholder="Enter actual value (required)" TValue="decimal"
+                                               Change="@OnScoreChanged" />
+                            </div>
+
+                            @* Show calculated RAG *@
+                            @if (scoreRequest.Score > 0 && !string.IsNullOrEmpty(autoCalculatedRAG))
+                            {
+                                <div class="calculated-rag-section">
+                                    <div class="calculated-rag-display">
+                                        <span class="calc-label">Calculated Rating:</span>
+                                        <span class="current-rag-badge @GetRAGClass(autoCalculatedRAG)">@FormatRAGDisplay(autoCalculatedRAG)</span>
+                                    </div>
+
+                                    @* Override toggle *@
+                                    <div class="override-toggle">
+                                        <label class="toggle-label">
+                                            <input type="checkbox" @bind="isOverrideMode" @bind:after="OnOverrideModeChanged" />
+                                            <span>Override calculated rating</span>
+                                        </label>
+                                    </div>
+
+                                    @if (isOverrideMode)
+                                    {
+                                        <div class="override-section">
+                                            <div class="form-group">
+                                                <label>Override to: *</label>
+                                                <div class="rag-selector">
+                                                    <button type="button" class="rag-option green @(scoreRequest.RAGRating == "GREEN" ? "selected" : "")"
+                                                            @onclick="@(() => SelectRAG("GREEN"))">
+                                                        <span class="rag-dot"></span>
+                                                        Green
+                                                    </button>
+                                                    <button type="button" class="rag-option amber @(scoreRequest.RAGRating == "AMB" ? "selected" : "")"
+                                                            @onclick="@(() => SelectRAG("AMB"))">
+                                                        <span class="rag-dot"></span>
+                                                        Amber
+                                                    </button>
+                                                    <button type="button" class="rag-option red @(scoreRequest.RAGRating == "RED" ? "selected" : "")"
+                                                            @onclick="@(() => SelectRAG("RED"))">
+                                                        <span class="rag-dot"></span>
+                                                        Red
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="form-group">
+                                                <label>Reason for Override *</label>
+                                                <RadzenTextArea @bind-Value="overrideReason" Rows="2" Style="width: 100%;"
+                                                                Placeholder="Please explain why you're overriding the calculated rating..." />
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="score-hint">Enter a score above to calculate the RAG rating.</p>
+                            }
+                        }
+                        else
+                        {
+                            @* Manual Mode (no threshold) *@
+                            <div class="threshold-section no-threshold">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="color: #ca8a04;">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                                </svg>
+                                <p class="threshold-hint">No threshold defined for this risk. Please select RAG rating manually.</p>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Score (Optional)</label>
+                                <RadzenNumeric @bind-Value="scoreRequest.Score" Min="0" Max="999" Style="width: 100%;"
+                                               Placeholder="Enter value" TValue="decimal" />
+                            </div>
+
+                            <div class="form-group">
+                                <label>RAG Rating *</label>
+                                <div class="rag-selector">
+                                    <button type="button" class="rag-option green @(scoreRequest.RAGRating == "GREEN" ? "selected" : "")"
+                                            @onclick="@(() => SelectRAG("GREEN"))">
+                                        <span class="rag-dot"></span>
+                                        Green
+                                    </button>
+                                    <button type="button" class="rag-option amber @(scoreRequest.RAGRating == "AMB" ? "selected" : "")"
+                                            @onclick="@(() => SelectRAG("AMB"))">
+                                        <span class="rag-dot"></span>
+                                        Amber
+                                    </button>
+                                    <button type="button" class="rag-option red @(scoreRequest.RAGRating == "RED" ? "selected" : "")"
+                                            @onclick="@(() => SelectRAG("RED"))">
+                                        <span class="rag-dot"></span>
+                                        Red
+                                    </button>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="form-group">
+                            <label>Notes</label>
+                            <RadzenTextArea @bind-Value="scoreRequest.Notes" Rows="3" Style="width: 100%;" Placeholder="Add notes or comments..." />
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(saveError) && scoreRequest.TRRiskId > 0)
+                        {
+                            <div class="error-message">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                                </svg>
+                                <span>@saveError</span>
+                            </div>
+                        }
+                    } @* End of else block for normal form *@
+                </div>
+                <div class="modal-footer">
+                    @if (scoreRequest.TRRiskId == 0 && !string.IsNullOrEmpty(saveError))
+                    {
+                        <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Close</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Cancel</button>
+                        <button type="button" class="btn btn-primary" @onclick="SaveScore" disabled="@(!CanSave() || isSaving)">
+                            @if (isSaving)
+                            {
+                                <span>Saving...</span>
+                            }
+                            else
+                            {
+                                <span>Save Score</span>
+                            }
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Create Risk Modal -->
+    @if (showCreateRiskDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseCreateRiskDialog">
+            <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>Create New Risk</h3>
+                    <button class="modal-close" @onclick="CloseCreateRiskDialog">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p class="create-risk-intro">This risk doesn't exist at this facility yet. Create it now and optionally add the first score.</p>
+
+                    @if (!string.IsNullOrEmpty(createRiskError))
+                    {
+                        <div class="error-message">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                            </svg>
+                            <span>@createRiskError</span>
+                        </div>
+                    }
+
+                    <div class="create-risk-info">
+                        @if (string.IsNullOrEmpty(createRiskServiceName))
+                        {
+                            <div class="form-group">
+                                <label>Service *</label>
+                                <RadzenDropDown @bind-Value="newRiskRequest.ServiceId"
+                                                Data="@services"
+                                                TextProperty="Name"
+                                                ValueProperty="Id"
+                                                Placeholder="Select service..."
+                                                Style="width: 100%;"
+                                                Change="@OnCreateRiskServiceChanged" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="info-row">
+                                <span class="info-label">Service:</span>
+                                <span class="info-value">@createRiskServiceName</span>
+                            </div>
+                        }
+                        <div class="info-row">
+                            <span class="info-label">Facility:</span>
+                            <span class="info-value">@createRiskFacilityName</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Risk Category *</label>
+                        <RadzenDropDown @bind-Value="newRiskRequest.RiskCategoryId"
+                                        Data="@createRiskCategories"
+                                        TextProperty="Name"
+                                        ValueProperty="Id"
+                                        Placeholder="Select category..."
+                                        Style="width: 100%;"
+                                        Change="@OnCreateRiskCategoryChanged" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Owner *</label>
+                        <RadzenDropDown @bind-Value="newRiskRequest.OwnerId"
+                                        Data="@owners"
+                                        TextProperty="Name"
+                                        ValueProperty="Id"
+                                        Placeholder="Select owner..."
+                                        Style="width: 100%;" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Risk Name</label>
+                        <RadzenTextBox @bind-Value="newRiskRequest.Name"
+                                       Placeholder="Auto-generated from Category + Facility"
+                                       Style="width: 100%;" />
+                        <span class="form-hint">Leave blank to auto-generate</span>
+                    </div>
+
+                    <div class="create-risk-divider">
+                        <span>Initial Score (Optional)</span>
+                    </div>
+
+                    @if (newRiskThreshold != null)
+                    {
+                        <div class="threshold-section">
+                            <label>Threshold Ranges</label>
+                            <div class="threshold-preview-bar">
+                                <div class="threshold-segment green" style="flex: @newRiskThreshold.GreenMax;">
+                                    <span>Green (0-@newRiskThreshold.GreenMax.ToString("0.#"))</span>
+                                </div>
+                                <div class="threshold-segment amber" style="flex: @((newRiskThreshold.AmberMax - newRiskThreshold.GreenMax));">
+                                    <span>Amber (@newRiskThreshold.GreenMax.ToString("0.#")-@newRiskThreshold.AmberMax.ToString("0.#"))</span>
+                                </div>
+                                <div class="threshold-segment red" style="flex: @(Math.Max(20, 100 - newRiskThreshold.AmberMax));">
+                                    <span>Red (>@newRiskThreshold.AmberMax.ToString("0.#"))</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Score</label>
+                            <RadzenNumeric @bind-Value="newRiskScore" Min="0" Max="999" Style="width: 100%;"
+                                           Placeholder="Enter score value" TValue="decimal"
+                                           Change="@OnNewRiskScoreChanged" />
+                        </div>
+
+                        @if (newRiskScore > 0 && !string.IsNullOrEmpty(newRiskCalculatedRAG))
+                        {
+                            <div class="calculated-rag-display">
+                                <span class="calc-label">Calculated Rating:</span>
+                                <span class="current-rag-badge @GetRAGClass(newRiskCalculatedRAG)">@FormatRAGDisplay(newRiskCalculatedRAG)</span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="no-threshold-hint">No threshold defined for this category. You can add a score after creating the risk.</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseCreateRiskDialog">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="CreateRiskAndScore" disabled="@(!CanCreateRisk() || isCreatingRisk)">
+                        @if (isCreatingRisk)
+                        {
+                            <span>Creating...</span>
+                        }
+                        else
+                        {
+                            <span>@(newRiskScore > 0 ? "Create & Add Score" : "Create Risk")</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Help Section -->
+    <DynamicHelpSection PageKey="TurnaroundRisk" ThresholdTitle="Compliance Rate Thresholds" />
+</div>
+
+@code {
+    private bool isLoading = true;
+    private bool showValues = true;
+    private bool allSitesView = true;
+    private int selectedPeriod = 6;
+    private int? selectedServiceId;
+    private int? selectedDomainId;
+    private int? selectedSiteId;
+    private int? selectedOwnerId;
+    private string currentMonthName = DateTime.Now.ToString("MMMM");
+
+    // Score Edit Modal state
+    private bool showScoreDialog = false;
+    private bool isNewScore = true;
+    private bool isSaving = false;
+    private string? saveError = null;
+    private int editingTRRiskId;
+    private string editingRiskName = "";
+    private string editingFacilityName = "";
+    private DateTime editingMonth = DateTime.Now;
+    private AddRiskScoreRequest scoreRequest = new();
+    private string? currentRAGRating = null;
+    private TRRiskThresholdDto? editingThreshold = null;
+    private int editingRiskCategoryId;
+    private int editingSiteId;
+    private int editingServiceId;
+    private bool isOverrideMode = false;
+    private string? overrideReason = null;
+    private string? autoCalculatedRAG = null;
+
+    // Create Risk Modal state
+    private bool showCreateRiskDialog = false;
+    private bool isCreatingRisk = false;
+    private string? createRiskError = null;
+    private CreateTRRiskRequest newRiskRequest = new();
+    private decimal newRiskScore = 0;
+    private string? newRiskCalculatedRAG = null;
+    private TRRiskThresholdDto? newRiskThreshold = null;
+    private List<RiskCategoryDto> createRiskCategories = new();
+    private string createRiskServiceName = "";
+    private string createRiskFacilityName = "";
+
+    private List<SiteDto> sites = new();
+    private List<SiteDto> filteredSites = new();
+    private List<SiteDto> displaySites = new();
+    private List<ServiceDto> services = new();
+    private List<DomainDto> domains = new();
+    private List<UserDto> owners = new();
+    private List<RiskCategoryDto> allCategories = new();
+    private HashSet<int> expandedSites = new();
+    private List<DateTime> periodMonths = new();
+
+    // Data models for views
+    private List<RiskMatrixRow> matrixData = new();
+    private List<SiteDrilldownData> drilldownData = new();
+
+    // Facility abbreviation mapping
+    private static readonly Dictionary<string, string> FacilityMap = new(StringComparer.InvariantCultureIgnoreCase)
+        {
+            ["Charingfield"] = "CF",
+            ["CF"] = "CF",
+            ["Vincent Court"] = "VC",
+            ["VC"] = "VC",
+            ["Groundwater Lodge"] = "GW",
+            ["GW"] = "GW",
+            ["Yaralla Place"] = "YP",
+            ["YP"] = "YP",
+            ["Alexandra Gardens"] = "AG",
+            ["AG"] = "AG",
+            ["Bundaleer"] = "BD",
+            ["BD"] = "BD",
+            ["Harden Grange"] = "HG",
+            ["HG"] = "HG",
+            ["Nanyima"] = "NC",
+            ["NC"] = "NC",
+            ["Yackandandah"] = "YK",
+            ["YK"] = "YK",
+            ["Millrace"] = "TM",
+            ["TM"] = "TM",
+            ["Haddington"] = "TH",
+            ["TH"] = "TH",
+            ["The Bays"] = "TB",
+            ["TB"] = "TB",
+            ["Resthaven"] = "RQ",
+            ["RQ"] = "RQ",
+            ["Hillrose"] = "HR",
+            ["HR"] = "HR",
+            ["Green Valley"] = "GV",
+            ["GV"] = "GV"
+        };
+
+    private string GetFacilityCode(string? facilityName)
+    {
+        if (string.IsNullOrEmpty(facilityName)) return "";
+        return FacilityMap.TryGetValue(facilityName, out var code) ? code : facilityName;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReferenceData();
+        CalculatePeriodMonths();
+        await LoadData();
+    }
+
+    private async Task LoadReferenceData()
+    {
+        var sitesTask = RiskService.GetAllSitesAsync();
+        var servicesTask = RiskService.GetServicesAsync();
+        var domainsTask = RiskService.GetAllDomainsAsync();
+        var ownersTask = RiskService.GetOwnersAsync();
+        var categoriesTask = RiskService.GetCategoriesAsync();
+
+        await Task.WhenAll(sitesTask, servicesTask, domainsTask, ownersTask, categoriesTask);
+
+        sites = await sitesTask;
+        filteredSites = sites;
+        services = await servicesTask;
+        domains = await domainsTask;
+        owners = await ownersTask;
+        allCategories = await categoriesTask;
+    }
+
+    private void CalculatePeriodMonths()
+    {
+        periodMonths.Clear();
+        var endDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        for (int i = selectedPeriod - 1; i >= 0; i--)
+        {
+            periodMonths.Add(endDate.AddMonths(-i));
+        }
+    }
+
+    private void UpdateFilteredSites()
+    {
+        if (selectedDomainId.HasValue)
+        {
+            filteredSites = sites.Where(s => s.DomainId == selectedDomainId.Value).ToList();
+        }
+        else
+        {
+            filteredSites = sites;
+        }
+
+        // If selected site is no longer in filtered list, clear it
+        if (selectedSiteId.HasValue && !filteredSites.Any(s => s.Id == selectedSiteId.Value))
+        {
+            selectedSiteId = null;
+        }
+    }
+
+    private async Task LoadData()
+    {
+        Console.WriteLine("=== LoadData() START ===");
+        Console.WriteLine($"Filters: serviceId={selectedServiceId}, siteId={selectedSiteId}, ownerId={selectedOwnerId}, domainId={selectedDomainId}");
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            UpdateFilteredSites();
+
+            // Determine which sites to display
+            if (selectedSiteId.HasValue)
+            {
+                displaySites = filteredSites.Where(s => s.Id == selectedSiteId.Value).ToList();
+            }
+            else
+            {
+                displaySites = filteredSites;
+            }
+
+            Console.WriteLine($"LoadData: Fetching risks...");
+
+            var risks = await RiskService.GetAllTRRisksAsync(
+                siteId: selectedSiteId,
+                serviceId: selectedServiceId,
+                categoryId: null,
+                ownerId: selectedOwnerId
+            );
+
+            Console.WriteLine($"LoadData: Got {risks.Count} risks");
+
+            // Log recent risk IDs to see if new ones are included
+            var recentRiskIds = risks.OrderByDescending(r => r.TRRiskId).Take(5).Select(r => $"{r.TRRiskId}:{r.Name}");
+            Console.WriteLine($"LoadData: Most recent risks: {string.Join(", ", recentRiskIds)}");
+
+            // Filter by domain if selected (and no specific site selected)
+            if (selectedDomainId.HasValue && !selectedSiteId.HasValue)
+            {
+                var domainSiteIds = filteredSites.Select(s => s.Id).ToHashSet();
+                risks = risks.Where(r => domainSiteIds.Contains(r.SiteId)).ToList();
+            }
+
+            // Get all risk scores for the period
+            var scores = new Dictionary<int, List<TRRiskScoreDto>>();
+            foreach (var risk in risks)
+            {
+                var riskScores = await RiskService.GetTRRiskScoresAsync(risk.TRRiskId);
+                scores[risk.TRRiskId] = riskScores;
+
+                // Log if this risk has recent scores
+                var recentScore = riskScores.OrderByDescending(s => s.Id).FirstOrDefault();
+                if (recentScore != null && recentScore.Id > 94000) // Only log very recent scores
+                {
+                    Console.WriteLine($"  Risk {risk.TRRiskId}: Latest score Id={recentScore.Id}, RAG={recentScore.RAGRating}, Date={recentScore.RatingDate:yyyy-MM-dd}");
+                }
+            }
+
+            Console.WriteLine($"LoadData: Loaded scores for {scores.Count} risks");
+
+            if (allSitesView)
+            {
+                BuildMatrixData(risks, scores);
+                Console.WriteLine($"LoadData: Matrix built with {matrixData.Count} rows");
+            }
+            else
+            {
+                BuildDrilldownData(risks, scores);
+                Console.WriteLine($"LoadData: Drilldown built with {drilldownData.Count} sites");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"LoadData ERROR: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            Console.WriteLine("=== LoadData() END ===");
+            StateHasChanged();
+        }
+    }
+
+    private void BuildMatrixData(List<TRRiskDto> risks, Dictionary<int, List<TRRiskScoreDto>> scores)
+    {
+        var newMatrixData = new List<RiskMatrixRow>();
+        var currentMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+
+        // Group risks by name and service (across sites)
+        var riskGroups = risks.GroupBy(r => new { r.Name, r.ServiceName });
+
+        foreach (var group in riskGroups)
+        {
+            var firstRisk = group.First();
+            var row = new RiskMatrixRow
+                {
+                    RiskName = group.Key.Name ?? "",
+                    ServiceName = group.Key.ServiceName ?? "",
+                    ServiceId = firstRisk.ServiceId,
+                    RiskCategoryId = firstRisk.RiskCategoryId,
+                    RiskCategoryName = firstRisk.RiskCategoryName ?? "",
+                    SiteRatings = new List<SiteRating>()
+                };
+
+            foreach (var risk in group)
+            {
+                // Get the current month's rating
+                string ragRating = "";
+                if (scores.TryGetValue(risk.TRRiskId, out var riskScores))
+                {
+                    var currentScore = riskScores
+                        .Where(s => s.RatingDate.Month == currentMonth.Month && s.RatingDate.Year == currentMonth.Year)
+                        .OrderByDescending(s => s.Id)
+                        .FirstOrDefault();
+
+                    ragRating = currentScore?.RAGRating ?? risk.RAGRating ?? "";
+
+                    // Debug log
+                    if (currentScore != null)
+                    {
+                        Console.WriteLine($"    BuildMatrix: {risk.Name} - Score found: Id={currentScore.Id}, RAG={currentScore.RAGRating}");
+                    }
+                }
+                else
+                {
+                    ragRating = risk.RAGRating ?? "";
+                }
+
+                row.SiteRatings.Add(new SiteRating
+                    {
+                        SiteId = risk.SiteId,
+                        SiteName = risk.SiteName ?? "",
+                        RAGRating = ragRating,
+                        TRRiskId = risk.TRRiskId
+                    });
+            }
+
+            newMatrixData.Add(row);
+        }
+
+        // Replace the entire collection to ensure Blazor detects the change
+        matrixData = newMatrixData;
+        Console.WriteLine($"BuildMatrixData: Assigned new list with {matrixData.Count} rows");
+    }
+
+    private void BuildDrilldownData(List<TRRiskDto> risks, Dictionary<int, List<TRRiskScoreDto>> scores)
+    {
+        drilldownData.Clear();
+
+        foreach (var site in displaySites)
+        {
+            var siteRisks = risks.Where(r => r.SiteId == site.Id).ToList();
+
+            var siteData = new SiteDrilldownData
+                {
+                    SiteId = site.Id,
+                    SiteName = site.Name ?? "",
+                    MonthlyData = new List<MonthlyScore>(),
+                    Risks = new List<RiskDrilldownItem>()
+                };
+
+            // Calculate monthly compliance rate for the site
+            foreach (var month in periodMonths)
+            {
+                int greenCount = 0;
+                int amberCount = 0;
+                int redCount = 0;
+                int totalCount = 0;
+
+                foreach (var risk in siteRisks)
+                {
+                    if (scores.TryGetValue(risk.TRRiskId, out var riskScores))
+                    {
+                        var monthRating = riskScores
+                            .Where(s => s.RatingDate.Month == month.Month && s.RatingDate.Year == month.Year)
+                            .OrderByDescending(s => s.Id)
+                            .FirstOrDefault();
+
+                        if (monthRating != null && !string.IsNullOrEmpty(monthRating.RAGRating))
+                        {
+                            totalCount++;
+                            var rating = monthRating.RAGRating.ToUpper();
+                            if (rating == "RED") redCount++;
+                            else if (rating == "AMB" || rating == "AMBER") amberCount++;
+                            else if (rating == "GRE" || rating == "GREEN") greenCount++;
+                        }
+                    }
+                }
+
+                siteData.MonthlyData.Add(new MonthlyScore
+                    {
+                        Month = month,
+                        TotalRisks = totalCount,
+                        GreenCount = greenCount,
+                        AmberCount = amberCount,
+                        RedCount = redCount
+                    });
+            }
+
+            // Build individual risk details
+            foreach (var risk in siteRisks)
+            {
+                var riskItem = new RiskDrilldownItem
+                    {
+                        TRRiskId = risk.TRRiskId,
+                        RiskName = risk.Name ?? "",
+                        ServiceName = risk.ServiceName ?? "",
+                        OwnerName = risk.OwnerName ?? "",
+                        MonthlyRatings = new List<MonthlyRating>()
+                    };
+
+                foreach (var month in periodMonths)
+                {
+                    string ragRating = "";
+                    if (scores.TryGetValue(risk.TRRiskId, out var riskScores))
+                    {
+                        var monthRating = riskScores
+                            .Where(s => s.RatingDate.Month == month.Month && s.RatingDate.Year == month.Year)
+                            .OrderByDescending(s => s.Id)
+                            .FirstOrDefault();
+
+                        ragRating = monthRating?.RAGRating ?? "";
+                    }
+
+                    riskItem.MonthlyRatings.Add(new MonthlyRating
+                        {
+                            Month = month,
+                            RAGRating = ragRating
+                        });
+                }
+
+                siteData.Risks.Add(riskItem);
+            }
+
+            drilldownData.Add(siteData);
+        }
+    }
+
+    private async Task SelectService(int? serviceId)
+    {
+        selectedServiceId = serviceId;
+        await LoadData();
+    }
+
+    private async Task SelectPeriod(int months)
+    {
+        selectedPeriod = months;
+        CalculatePeriodMonths();
+        await LoadData();
+    }
+
+    private async Task OnFilterChanged()
+    {
+        await LoadData();
+    }
+
+    private async Task OnRefreshClicked()
+    {
+        Console.WriteLine("=== MANUAL REFRESH CLICKED ===");
+        await LoadData();
+        Console.WriteLine("=== MANUAL REFRESH COMPLETE ===");
+    }
+
+    private void OnToggleChanged()
+    {
+        StateHasChanged();
+    }
+
+    private async Task OnViewModeChanged()
+    {
+        expandedSites.Clear();
+        await LoadData();
+    }
+
+    private void ToggleSiteExpand(int siteId)
+    {
+        if (expandedSites.Contains(siteId))
+        {
+            expandedSites.Remove(siteId);
+        }
+        else
+        {
+            expandedSites.Add(siteId);
+        }
+        StateHasChanged();
+    }
+
+    private string GetRAGClass(string? rating)
+    {
+        return rating?.ToUpper() switch
+        {
+            "RED" => "rag-red",
+            "AMB" or "AMBER" => "rag-amber",
+            "GRE" or "GREEN" => "rag-green",
+            _ => ""
+        };
+    }
+
+    private string GetScoreRAGClass(int score)
+    {
+        if (score == 0) return "rag-green";
+        if (score <= 5) return "rag-amber";
+        return "rag-red";
+    }
+
+    private string GetComplianceRAGClass(decimal complianceRate)
+    {
+        // Industry standard thresholds for compliance
+        if (complianceRate >= 90) return "rag-green";      // 90%+ = Green (excellent)
+        if (complianceRate >= 70) return "rag-amber";      // 70-89% = Amber (needs attention)
+        return "rag-red";                                   // Below 70% = Red (critical)
+    }
+
+    private string FormatRAGDisplay(string? rating)
+    {
+        return rating?.ToUpper() switch
+        {
+            "RED" => "Red",
+            "AMB" => "Amber",
+            "GRE" => "Green",
+            "AMBER" => "Amber",
+            "GREEN" => "Green",
+            _ => rating ?? "-"
+        };
+    }
+
+    // Score Editor Methods
+    private async Task OpenScoreEditor(int trRiskId, string riskName, string? facilityName)
+    {
+        Console.WriteLine($"OpenScoreEditor called - TRRiskId: {trRiskId}, Risk: {riskName}, Facility: {facilityName}");
+
+        if (trRiskId == 0)
+        {
+            Console.WriteLine("TRRiskId is 0, not opening dialog");
+            return;
+        }
+
+        editingTRRiskId = trRiskId;
+        editingRiskName = riskName;
+        editingFacilityName = facilityName ?? "";
+        editingMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        isNewScore = true;
+        saveError = null;
+        editingThreshold = null;
+        currentRAGRating = null;
+
+        // Initialize scoreRequest first with basic info
+        scoreRequest = new AddRiskScoreRequest
+            {
+                TRRiskId = trRiskId,
+                RatingDate = editingMonth,
+                RAGRating = "",
+                Score = 0,
+                Notes = "",
+                EnteredBy = 1 // TODO: Get from auth context
+            };
+
+        // Load risk details - this will populate scoreRequest with existing values if any
+        await LoadRiskDetailsAndThreshold(trRiskId, editingMonth);
+
+        showScoreDialog = true;
+        StateHasChanged();
+    }
+
+    // Matrix view specific - tries to find a risk for empty cells
+    private async Task OpenScoreEditorMatrix(int trRiskId, string riskName, string serviceName, int siteId, string? facilityName)
+    {
+        Console.WriteLine($"OpenScoreEditorMatrix called - TRRiskId: {trRiskId}, Risk: {riskName}, Service: {serviceName}, SiteId: {siteId}, Facility: {facilityName}");
+
+        var actualRiskId = trRiskId;
+        var actualRiskName = riskName;
+
+        // If no TRRiskId, try to find a matching risk for this site
+        if (actualRiskId == 0)
+        {
+            Console.WriteLine($"No TRRiskId - searching for risk at site {siteId}...");
+
+            // Try to find a risk with similar name at this site
+            var allRisks = await RiskService.GetAllTRRisksAsync(siteId: siteId, serviceId: null, categoryId: null, ownerId: null);
+
+            // First try exact match on service
+            var matchingRisk = allRisks.FirstOrDefault(r =>
+                r.ServiceName == serviceName &&
+                r.SiteId == siteId);
+
+            // If no exact service match, try to find any risk at this site that's similar
+            if (matchingRisk == null)
+            {
+                // Extract base risk name (remove site suffix if present)
+                var baseRiskName = riskName;
+                foreach (var site in sites)
+                {
+                    if (riskName.EndsWith($" - {site.Name}"))
+                    {
+                        baseRiskName = riskName.Replace($" - {site.Name}", "");
+                        break;
+                    }
+                }
+
+                // Look for a risk with the base name at this site
+                matchingRisk = allRisks.FirstOrDefault(r =>
+                    r.Name != null &&
+                    (r.Name.StartsWith(baseRiskName) || r.Name.Contains(baseRiskName)));
+            }
+
+            if (matchingRisk != null)
+            {
+                actualRiskId = matchingRisk.TRRiskId;
+                actualRiskName = matchingRisk.Name ?? riskName;
+                Console.WriteLine($"Found matching risk: TRRiskId={actualRiskId}, Name={actualRiskName}");
+            }
+            else
+            {
+                // No matching risk found - show message
+                Console.WriteLine("No matching risk found for this site");
+                saveError = $"No risk record exists for '{riskName}' at {facilityName}. Please create the risk first.";
+                showScoreDialog = true;
+                editingRiskName = riskName;
+                editingFacilityName = facilityName ?? "";
+                editingMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+                editingThreshold = null;
+                currentRAGRating = null;
+                scoreRequest = new AddRiskScoreRequest();
+                StateHasChanged();
+                return;
+            }
+        }
+
+        // Now open the score editor with the actual risk
+        await OpenScoreEditor(actualRiskId, actualRiskName, facilityName);
+    }
+
+    private async Task OpenScoreEditorForMonth(int trRiskId, string riskName, string? facilityName, DateTime month)
+    {
+        Console.WriteLine($"OpenScoreEditorForMonth called - TRRiskId: {trRiskId}, Risk: {riskName}, Facility: {facilityName}, Month: {month}");
+
+        if (trRiskId == 0)
+        {
+            Console.WriteLine("TRRiskId is 0, not opening dialog");
+            return;
+        }
+
+        editingTRRiskId = trRiskId;
+        editingRiskName = riskName;
+        editingFacilityName = facilityName ?? "";
+        editingMonth = month;
+        isNewScore = true;
+        saveError = null;
+        editingThreshold = null;
+        currentRAGRating = null;
+
+        // Initialize scoreRequest first with basic info
+        scoreRequest = new AddRiskScoreRequest
+            {
+                TRRiskId = trRiskId,
+                RatingDate = month,
+                RAGRating = "",
+                Score = 0,
+                Notes = "",
+                EnteredBy = 1 // TODO: Get from auth context
+            };
+
+        // Load risk details - this will populate scoreRequest with existing values if any
+        await LoadRiskDetailsAndThreshold(trRiskId, month);
+
+        showScoreDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task LoadRiskDetailsAndThreshold(int trRiskId, DateTime month)
+    {
+        // Reset override state
+        isOverrideMode = false;
+        overrideReason = null;
+        autoCalculatedRAG = null;
+
+        try
+        {
+            // Get the risk details
+            var risk = await RiskService.GetTRRiskByIdAsync(trRiskId);
+            if (risk != null)
+            {
+                editingRiskCategoryId = risk.RiskCategoryId;
+                editingSiteId = risk.SiteId;
+                editingServiceId = risk.ServiceId;
+
+                // Get threshold for this risk's category, site, and service
+                var thresholds = await RiskService.GetTRRiskThresholdsAsync(
+                    categoryId: risk.RiskCategoryId,
+                    siteId: risk.SiteId,
+                    serviceId: risk.ServiceId
+                );
+
+                editingThreshold = thresholds.FirstOrDefault();
+
+                // Get current score for this month
+                var scores = await RiskService.GetTRRiskScoresAsync(trRiskId);
+                var monthScore = scores
+                    .Where(s => s.RatingDate.Month == month.Month && s.RatingDate.Year == month.Year)
+                    .OrderByDescending(s => s.Id)
+                    .FirstOrDefault();
+
+                currentRAGRating = monthScore?.RAGRating;
+
+                // Pre-populate the score request with existing values
+                if (monthScore != null)
+                {
+                    scoreRequest.Score = monthScore.Score;
+                    scoreRequest.RAGRating = monthScore.RAGRating ?? "";
+                    scoreRequest.Notes = ""; // Don't pre-fill notes, user can add new ones
+
+                    // If threshold exists and score > 0, calculate what the auto RAG should be
+                    if (editingThreshold != null && monthScore.Score > 0)
+                    {
+                        if (monthScore.Score <= editingThreshold.GreenMax)
+                            autoCalculatedRAG = "GREEN";
+                        else if (monthScore.Score <= editingThreshold.AmberMax)
+                            autoCalculatedRAG = "AMB";
+                        else
+                            autoCalculatedRAG = "RED";
+                    }
+
+                    isNewScore = false; // This is an update, not a new score
+                }
+                else
+                {
+                    isNewScore = true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading risk details: {ex.Message}");
+        }
+    }
+
+    private void SelectRAG(string rating)
+    {
+        scoreRequest.RAGRating = rating;
+        StateHasChanged();
+    }
+
+    private void OnScoreChanged(decimal value)
+    {
+        // Auto-calculate RAG based on threshold if available
+        if (editingThreshold != null && value > 0)
+        {
+            if (value <= editingThreshold.GreenMax)
+            {
+                autoCalculatedRAG = "GREEN";
+            }
+            else if (value <= editingThreshold.AmberMax)
+            {
+                autoCalculatedRAG = "AMB";
+            }
+            else
+            {
+                autoCalculatedRAG = "RED";
+            }
+
+            // If not in override mode, use the calculated RAG
+            if (!isOverrideMode)
+            {
+                scoreRequest.RAGRating = autoCalculatedRAG;
+            }
+            StateHasChanged();
+        }
+        else
+        {
+            autoCalculatedRAG = null;
+        }
+    }
+
+    private void OnOverrideModeChanged()
+    {
+        if (!isOverrideMode)
+        {
+            // Switching back to auto mode - reset to calculated RAG
+            scoreRequest.RAGRating = autoCalculatedRAG ?? "";
+            overrideReason = null;
+        }
+        StateHasChanged();
+    }
+
+    private bool CanSave()
+    {
+        // If threshold exists (score required mode)
+        if (editingThreshold != null)
+        {
+            // Must have a score > 0
+            if (scoreRequest.Score <= 0) return false;
+
+            // Must have a RAG rating
+            if (string.IsNullOrEmpty(scoreRequest.RAGRating)) return false;
+
+            // If in override mode, must have a reason
+            if (isOverrideMode && string.IsNullOrWhiteSpace(overrideReason)) return false;
+
+            return true;
+        }
+        else
+        {
+            // Manual mode - just need a RAG rating
+            return !string.IsNullOrEmpty(scoreRequest.RAGRating);
+        }
+    }
+
+    private void CloseScoreDialog()
+    {
+        showScoreDialog = false;
+        saveError = null;
+        scoreRequest = new AddRiskScoreRequest();
+        isOverrideMode = false;
+        overrideReason = null;
+        autoCalculatedRAG = null;
+        editingThreshold = null;
+        currentRAGRating = null;
+        StateHasChanged();
+    }
+
+    private async Task SaveScore()
+    {
+        Console.WriteLine($"SaveScore START - TRRiskId: {scoreRequest.TRRiskId}, RAG: {scoreRequest.RAGRating}, Score: {scoreRequest.Score}");
+
+        // Validate based on mode
+        if (!CanSave())
+        {
+            if (editingThreshold != null)
+            {
+                if (scoreRequest.Score <= 0)
+                    saveError = "Please enter a score value";
+                else if (isOverrideMode && string.IsNullOrWhiteSpace(overrideReason))
+                    saveError = "Please provide a reason for overriding the calculated rating";
+                else
+                    saveError = "Please complete all required fields";
+            }
+            else
+            {
+                saveError = "Please select a RAG rating";
+            }
+            StateHasChanged();
+            return;
+        }
+
+        saveError = null;
+        isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            // If in override mode, append the override reason to notes
+            if (isOverrideMode && !string.IsNullOrWhiteSpace(overrideReason))
+            {
+                var overrideNote = $"[OVERRIDE] Calculated: {FormatRAGDisplay(autoCalculatedRAG)}, Changed to: {FormatRAGDisplay(scoreRequest.RAGRating)}. Reason: {overrideReason}";
+                scoreRequest.Notes = string.IsNullOrWhiteSpace(scoreRequest.Notes)
+                    ? overrideNote
+                    : $"{overrideNote}\n\n{scoreRequest.Notes}";
+            }
+
+            Console.WriteLine("Calling RiskService.AddTRRiskScoreAsync...");
+
+            var result = await RiskService.AddTRRiskScoreAsync(scoreRequest);
+
+            Console.WriteLine($"SaveScore result: {(result != null ? "Success, Id=" + result.Id : "NULL - FAILED")}");
+
+            if (result != null)
+            {
+                Console.WriteLine("Score saved successfully - closing dialog and reloading...");
+
+                // Reset dialog state
+                showScoreDialog = false;
+                scoreRequest = new AddRiskScoreRequest();
+                isOverrideMode = false;
+                overrideReason = null;
+                autoCalculatedRAG = null;
+
+                // Reload data
+                await LoadData();
+            }
+            else
+            {
+                saveError = "Failed to save score. Check server logs for details.";
+            }
+        }
+        catch (Exception ex)
+        {
+            saveError = $"Error: {ex.Message}";
+            Console.WriteLine($"SaveScore exception: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // ============================================================================
+    // CREATE RISK METHODS
+    // ============================================================================
+
+    private async Task OpenCreateRiskDialog(int serviceId, string serviceName, int categoryId, string categoryName, int siteId, string siteName)
+    {
+        Console.WriteLine($"OpenCreateRiskDialog - Service: {serviceName}, Category: {categoryName}, Site: {siteName}");
+
+        createRiskError = null;
+        isCreatingRisk = false;
+        newRiskScore = 0;
+        newRiskCalculatedRAG = null;
+        newRiskThreshold = null;
+
+        createRiskServiceName = serviceName;
+        createRiskFacilityName = siteName;
+
+        // Load categories for this service
+        createRiskCategories = await RiskService.GetCategoriesAsync(serviceId);
+
+        // Pre-populate the request
+        newRiskRequest = new CreateTRRiskRequest
+            {
+                ServiceId = serviceId,
+                SiteId = siteId,
+                RiskCategoryId = categoryId,
+                Status = "Active"
+            };
+
+        // Try to load threshold for this category/site/service
+        await LoadNewRiskThreshold();
+
+        showCreateRiskDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task OpenCreateRiskDialogForSite(int siteId, string siteName)
+    {
+        Console.WriteLine($"OpenCreateRiskDialogForSite - Site: {siteName}");
+
+        createRiskError = null;
+        isCreatingRisk = false;
+        newRiskScore = 0;
+        newRiskCalculatedRAG = null;
+        newRiskThreshold = null;
+
+        createRiskServiceName = ""; // User will select
+        createRiskFacilityName = siteName;
+
+        // Load all categories (will filter when service is selected)
+        createRiskCategories = allCategories;
+
+        // Pre-populate the request with just the site
+        newRiskRequest = new CreateTRRiskRequest
+            {
+                ServiceId = selectedServiceId ?? 0, // Use filter if set
+                SiteId = siteId,
+                RiskCategoryId = 0,
+                Status = "Active"
+            };
+
+        // If a service filter is active, use it
+        if (selectedServiceId.HasValue)
+        {
+            createRiskServiceName = services.FirstOrDefault(s => s.Id == selectedServiceId.Value)?.Name ?? "";
+            createRiskCategories = await RiskService.GetCategoriesAsync(selectedServiceId.Value);
+        }
+
+        showCreateRiskDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseCreateRiskDialog()
+    {
+        showCreateRiskDialog = false;
+        createRiskError = null;
+    }
+
+    private async Task OnCreateRiskServiceChanged()
+    {
+        // Load categories for the selected service
+        if (newRiskRequest.ServiceId > 0)
+        {
+            createRiskCategories = await RiskService.GetCategoriesAsync(newRiskRequest.ServiceId);
+        }
+        else
+        {
+            createRiskCategories = allCategories;
+        }
+
+        // Reset category selection
+        newRiskRequest.RiskCategoryId = 0;
+        newRiskThreshold = null;
+        newRiskScore = 0;
+        newRiskCalculatedRAG = null;
+    }
+
+    private async Task OnCreateRiskCategoryChanged()
+    {
+        // Update the threshold when category changes
+        await LoadNewRiskThreshold();
+
+        // Reset score
+        newRiskScore = 0;
+        newRiskCalculatedRAG = null;
+    }
+
+    private async Task LoadNewRiskThreshold()
+    {
+        if (newRiskRequest.RiskCategoryId > 0 && newRiskRequest.SiteId > 0)
+        {
+            var thresholds = await RiskService.GetTRRiskThresholdsAsync(
+                categoryId: newRiskRequest.RiskCategoryId,
+                siteId: newRiskRequest.SiteId,
+                serviceId: newRiskRequest.ServiceId
+            );
+            newRiskThreshold = thresholds.FirstOrDefault();
+        }
+        else
+        {
+            newRiskThreshold = null;
+        }
+    }
+
+    private void OnNewRiskScoreChanged(decimal value)
+    {
+        if (newRiskThreshold != null && value > 0)
+        {
+            if (value <= newRiskThreshold.GreenMax)
+                newRiskCalculatedRAG = "GREEN";
+            else if (value <= newRiskThreshold.AmberMax)
+                newRiskCalculatedRAG = "AMB";
+            else
+                newRiskCalculatedRAG = "RED";
+        }
+        else
+        {
+            newRiskCalculatedRAG = null;
+        }
+    }
+
+    private bool CanCreateRisk()
+    {
+        return newRiskRequest.RiskCategoryId > 0 &&
+               newRiskRequest.OwnerId > 0 &&
+               newRiskRequest.SiteId > 0 &&
+               newRiskRequest.ServiceId > 0;
+    }
+
+    private async Task CreateRiskAndScore()
+    {
+        createRiskError = null;
+
+        if (!CanCreateRisk())
+        {
+            createRiskError = "Please select a category and owner.";
+            return;
+        }
+
+        isCreatingRisk = true;
+        StateHasChanged();
+
+        try
+        {
+            // Auto-generate name if not provided
+            if (string.IsNullOrWhiteSpace(newRiskRequest.Name))
+            {
+                var category = createRiskCategories.FirstOrDefault(c => c.Id == newRiskRequest.RiskCategoryId);
+                newRiskRequest.Name = $"{category?.Name} - {createRiskFacilityName}";
+            }
+
+            Console.WriteLine($"Creating risk: {newRiskRequest.Name}");
+
+            // Create the risk
+            var createdRisk = await RiskService.CreateTRRiskAsync(newRiskRequest);
+
+            if (createdRisk == null)
+            {
+                createRiskError = "Failed to create risk. It may already exist.";
+                isCreatingRisk = false;
+                StateHasChanged();
+                return;
+            }
+
+            Console.WriteLine($"Risk created with ID: {createdRisk.TRRiskId}");
+
+            // If score was entered, add it
+            if (newRiskScore > 0 && !string.IsNullOrEmpty(newRiskCalculatedRAG))
+            {
+                var scoreRequest = new AddRiskScoreRequest
+                    {
+                        TRRiskId = createdRisk.TRRiskId,
+                        RatingDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1),
+                        RAGRating = newRiskCalculatedRAG,
+                        Score = newRiskScore,
+                        EnteredBy = 1 // TODO: Get from auth context
+                    };
+
+                var scoreResult = await RiskService.AddTRRiskScoreAsync(scoreRequest);
+                Console.WriteLine($"Score added: {(scoreResult != null ? "Success" : "Failed")}");
+            }
+
+            // Close dialog
+            showCreateRiskDialog = false;
+            isCreatingRisk = false;
+
+            Console.WriteLine("Create risk completed - reloading data...");
+
+            // Reload data
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            createRiskError = $"Error: {ex.Message}";
+            Console.WriteLine($"Error creating risk: {ex.Message}");
+            isCreatingRisk = false;
+            StateHasChanged();
+        }
+    }
+
+    // View Models
+    public class RiskMatrixRow
+    {
+        public string RiskName { get; set; } = "";
+        public string ServiceName { get; set; } = "";
+        public int ServiceId { get; set; }
+        public int RiskCategoryId { get; set; }
+        public string RiskCategoryName { get; set; } = "";
+        public List<SiteRating> SiteRatings { get; set; } = new();
+    }
+
+    public class SiteRating
+    {
+        public int SiteId { get; set; }
+        public string SiteName { get; set; } = "";
+        public string RAGRating { get; set; } = "";
+        public int TRRiskId { get; set; }
+    }
+
+    public class SiteDrilldownData
+    {
+        public int SiteId { get; set; }
+        public string SiteName { get; set; } = "";
+        public List<MonthlyScore> MonthlyData { get; set; } = new();
+        public List<RiskDrilldownItem> Risks { get; set; } = new();
+    }
+
+    public class MonthlyScore
+    {
+        public DateTime Month { get; set; }
+        public int TotalRisks { get; set; }
+        public int GreenCount { get; set; }
+        public int AmberCount { get; set; }
+        public int RedCount { get; set; }
+        public decimal ComplianceRate => TotalRisks > 0 ? Math.Round((decimal)GreenCount / TotalRisks * 100, 0) : 0;
+    }
+
+    public class RiskDrilldownItem
+    {
+        public int TRRiskId { get; set; }
+        public string RiskName { get; set; } = "";
+        public string ServiceName { get; set; } = "";
+        public string OwnerName { get; set; } = "";
+        public List<MonthlyRating> MonthlyRatings { get; set; } = new();
+    }
+
+    public class MonthlyRating
+    {
+        public DateTime Month { get; set; }
+        public string RAGRating { get; set; } = "";
+    }
+}
+
+<style>
+    .turnaround-risk-page {
+        max-width: 100%;
+        margin: 0 auto;
+    }
+
+    /* Card container */
+    .card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    /* Filter Bar */
+    .filter-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1rem;
+        padding: 0.75rem 0;
+        margin-bottom: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .filter-section {
+        flex: 1;
+    }
+
+    .service-tabs {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        flex-wrap: wrap;
+    }
+
+    .tab-btn {
+        padding: 0.5rem 1rem;
+        background: var(--bg-light);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+    }
+
+        .tab-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            background: var(--accent-color);
+            color: #333;
+            border-color: var(--accent-color);
+        }
+
+    .filter-dropdowns {
+        display: flex;
+        align-items: flex-end;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .filter-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+        .filter-item label {
+            font-size: 0.6875rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+    /* Sub Header */
+    .sub-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.625rem 0;
+        margin-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .sub-header-left {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .section-icon {
+        font-size: 1.125rem;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+    .section-title {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .btn-refresh {
+        background: none;
+        border: 1px solid var(--border-color, #e2e8f0);
+        border-radius: 6px;
+        padding: 0.375rem;
+        cursor: pointer;
+        color: var(--text-secondary, #64748b);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s ease;
+        margin-left: 0.5rem;
+    }
+
+        .btn-refresh:hover {
+            background: var(--bg-light, #f1f5f9);
+            color: var(--accent-color, #ffd170);
+            border-color: var(--accent-color, #ffd170);
+        }
+
+    .sub-header-right {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+    }
+
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+    }
+
+    .period-buttons {
+        display: flex;
+        gap: 0.125rem;
+        background: var(--bg-light);
+        border-radius: 6px;
+        padding: 0.1875rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .period-btn {
+        padding: 0.3125rem 0.625rem;
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+        .period-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .period-btn.active {
+            background: var(--accent-color);
+            color: #333;
+        }
+
+    /* Loading */
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 2rem;
+        gap: 1rem;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+    }
+
+    /* ========================================
+           RISK MATRIX (All Sites View)
+           ======================================== */
+    .risk-matrix-container {
+        overflow-x: auto;
+    }
+
+    .risk-matrix {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.75rem;
+    }
+
+        .risk-matrix th,
+        .risk-matrix td {
+            padding: 0.5rem 0.625rem;
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .risk-matrix thead th {
+            background: var(--bg-light);
+            font-weight: 600;
+            font-size: 0.6875rem;
+            color: var(--text-primary);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        .risk-matrix .risk-col {
+            text-align: left;
+            min-width: 220px;
+            max-width: 300px;
+            position: sticky;
+            left: 0;
+            background: var(--bg-light);
+            z-index: 11;
+        }
+
+        .risk-matrix .site-col {
+            min-width: 70px;
+            max-width: 90px;
+            font-size: 0.625rem;
+        }
+
+        .risk-matrix .data-row .risk-name {
+            text-align: left;
+            font-weight: 500;
+            color: var(--text-primary);
+            position: sticky;
+            left: 0;
+            background: var(--card-bg);
+            z-index: 5;
+        }
+
+    .service-header-row .service-header {
+        background: var(--accent-color);
+        color: #333;
+        font-weight: 600;
+        text-align: left;
+        font-size: 0.75rem;
+        padding: 0.5rem 0.625rem;
+        position: sticky;
+        left: 0;
+    }
+
+    /* RAG Cells */
+    .rag-cell {
+        min-width: 55px;
+        font-weight: 500;
+    }
+
+        .rag-cell.rag-red {
+            background: rgba(239, 68, 68, 0.12);
+            color: #dc2626;
+        }
+
+        .rag-cell.rag-amber {
+            background: rgba(245, 158, 11, 0.12);
+            color: #d97706;
+        }
+
+        .rag-cell.rag-green {
+            background: rgba(34, 197, 94, 0.12);
+            color: #16a34a;
+        }
+
+    .rag-text {
+        font-size: 0.6875rem;
+        font-weight: 600;
+    }
+
+    .no-data {
+        text-align: center;
+        color: var(--text-muted);
+        font-style: italic;
+        padding: 2rem !important;
+        font-size: 0.8125rem;
+    }
+
+    /* ========================================
+           SITE DRILLDOWN VIEW
+           ======================================== */
+    .site-drilldown-container {
+        overflow-x: auto;
+    }
+
+    .site-drilldown {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.75rem;
+    }
+
+        .site-drilldown th,
+        .site-drilldown td {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .site-drilldown .site-col-header {
+            text-align: left;
+            min-width: 220px;
+            background: var(--bg-light);
+            font-weight: 600;
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: var(--text-primary);
+        }
+
+        .site-drilldown .month-col-header {
+            background: var(--bg-light);
+            font-weight: 600;
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: var(--text-primary);
+            min-width: 80px;
+        }
+
+    .site-row {
+        background: var(--card-bg);
+    }
+
+        .site-row:hover {
+            background: var(--bg-hover);
+        }
+
+        .site-row.expanded {
+            background: var(--bg-light);
+        }
+
+    .site-name-cell {
+        text-align: left;
+        padding: 0 !important;
+    }
+
+    .expand-btn {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        padding: 0.5rem 0.75rem;
+        width: 100%;
+        text-align: left;
+        transition: background 0.15s;
+    }
+
+        .expand-btn:hover {
+            background: var(--bg-hover);
+        }
+
+    .expand-icon {
+        color: var(--text-muted);
+        font-size: 0.5rem;
+        width: 10px;
+        flex-shrink: 0;
+    }
+
+    .site-label {
+        font-weight: 500;
+    }
+
+    .score-cell {
+        font-weight: 600;
+        font-size: 0.75rem;
+    }
+
+    /* Detail Table (Expanded) */
+    .detail-container-row {
+        background: var(--bg-light);
+    }
+
+    .detail-container-cell {
+        padding: 0 !important;
+        background: var(--bg-light);
+    }
+
+    .detail-table-wrapper {
+        padding: 0.5rem;
+        background: var(--bg-light);
+    }
+
+    .detail-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card-bg);
+        border-radius: 4px;
+        overflow: hidden;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+        .detail-table th,
+        .detail-table td {
+            padding: 0.375rem 0.625rem;
+            border: 1px solid var(--border-color);
+            text-align: center;
+            font-size: 0.6875rem;
+        }
+
+        .detail-table th {
+            background: var(--bg-light);
+            font-weight: 600;
+            font-size: 0.625rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+    .detail-risk-col {
+        text-align: left !important;
+        min-width: 180px;
+    }
+
+    .detail-owner-col {
+        text-align: left !important;
+        min-width: 120px;
+    }
+
+    .detail-month-col {
+        min-width: 65px;
+    }
+
+    .detail-service-row .detail-service-header {
+        background: var(--accent-color);
+        color: #333;
+        font-weight: 600;
+        text-align: left;
+        font-size: 0.6875rem;
+        padding: 0.375rem 0.625rem;
+    }
+
+    .detail-data-row .detail-risk-name {
+        text-align: left;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .detail-data-row .detail-owner-name {
+        text-align: left;
+        color: var(--text-secondary);
+        font-weight: 400;
+    }
+
+    .detail-rag-cell {
+        font-weight: 500;
+        font-size: 0.625rem;
+    }
+
+        .detail-rag-cell.rag-red {
+            background: rgba(239, 68, 68, 0.12);
+            color: #dc2626;
+        }
+
+        .detail-rag-cell.rag-amber {
+            background: rgba(245, 158, 11, 0.12);
+            color: #d97706;
+        }
+
+        .detail-rag-cell.rag-green {
+            background: rgba(34, 197, 94, 0.12);
+            color: #16a34a;
+        }
+
+    .no-risks-cell {
+        text-align: center;
+        color: var(--text-muted);
+        font-style: italic;
+        padding: 1.5rem !important;
+        background: var(--bg-light);
+        font-size: 0.75rem;
+    }
+
+    .no-risks-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .add-risk-row {
+        display: flex;
+        justify-content: flex-start;
+        padding: 0.75rem 1rem;
+        border-top: 1px dashed var(--border-color, #e2e8f0);
+        background: var(--bg-light, #f8fafc);
+    }
+
+    .btn-add-risk {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        background: var(--card-bg, #fff);
+        border: 1px dashed var(--accent-color, #ffd170);
+        border-radius: 6px;
+        color: var(--text-secondary, #64748b);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+        .btn-add-risk:hover {
+            background: var(--accent-color, #ffd170);
+            color: var(--text-primary, #1e293b);
+            border-style: solid;
+        }
+
+        .btn-add-risk svg {
+            opacity: 0.7;
+        }
+
+        .btn-add-risk:hover svg {
+            opacity: 1;
+        }
+
+    /* Responsive */
+    @@media (max-width: 1200px) {
+        .filter-bar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .filter-dropdowns {
+            justify-content: flex-start;
+        }
+    }
+
+    @@media (max-width: 768px) {
+        .sub-header {
+            flex-direction: column;
+            gap: 0.75rem;
+            align-items: flex-start;
+        }
+
+        .sub-header-right {
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        .filter-dropdowns {
+            flex-direction: column;
+            width: 100%;
+        }
+
+        .filter-item {
+            width: 100%;
+        }
+    }
+
+    /* Clickable Cells */
+    .rag-cell.clickable,
+    .detail-rag-cell.clickable {
+        cursor: pointer;
+        transition: all 0.15s ease;
+    }
+
+        .rag-cell.clickable:hover,
+        .detail-rag-cell.clickable:hover {
+            transform: scale(1.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 1;
+            position: relative;
+        }
+
+    .rag-cell.no-risk {
+        background: var(--bg-light, #f8fafc);
+        border: 1px dashed var(--border-color, #cbd5e1);
+    }
+
+        .rag-cell.no-risk:hover {
+            background: var(--bg-hover, #e2e8f0);
+            border-color: var(--accent-color, #ffd170);
+        }
+
+    .add-score-hint {
+        color: var(--text-muted, #94a3b8);
+        font-size: 1rem;
+        font-weight: 300;
+        opacity: 0.5;
+        transition: opacity 0.15s;
+    }
+
+    .rag-cell.no-risk:hover .add-score-hint {
+        opacity: 1;
+        color: var(--accent-color, #ffd170);
+    }
+
+    /* Matrix empty cell (no risk at this site) - display only */
+    .rag-cell.empty-cell {
+        background: var(--bg-subtle, #f1f5f9);
+        cursor: default;
+    }
+
+    .no-risk-indicator {
+        color: var(--text-muted, #94a3b8);
+        font-size: 0.875rem;
+        opacity: 0.5;
+    }
+
+    /* Clickable cell without rating (has risk, no score yet) */
+    .rag-cell.no-rating {
+        background: var(--bg-light, #f8fafc);
+        border: 1px dashed var(--border-color, #cbd5e1);
+    }
+
+        .rag-cell.no-rating:hover {
+            background: var(--bg-hover, #e2e8f0);
+            border-color: var(--accent-color, #ffd170);
+        }
+
+            .rag-cell.no-rating:hover .add-score-hint {
+                opacity: 1;
+                color: var(--accent-color, #ffd170);
+            }
+
+    /* Drilldown empty cell styling */
+    .detail-rag-cell.no-rating {
+        background: var(--bg-light, #f8fafc);
+        border: 1px dashed var(--border-color, #cbd5e1);
+    }
+
+        .detail-rag-cell.no-rating:hover {
+            background: var(--bg-hover, #e2e8f0);
+            border-color: var(--accent-color, #ffd170);
+        }
+
+            .detail-rag-cell.no-rating:hover .add-score-hint {
+                opacity: 1;
+                color: var(--accent-color, #ffd170);
+            }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        backdrop-filter: blur(2px);
+    }
+
+    .modal-dialog {
+        background: var(--card-bg, white);
+        border-radius: 12px;
+        width: 100%;
+        max-width: 480px;
+        max-height: 90vh;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        animation: modalSlideIn 0.2s ease-out;
+    }
+
+    @@keyframes modalSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
+        background: var(--bg-light, #f8fafc);
+    }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary, #1e293b);
+        }
+
+    .modal-close {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0.25rem;
+        color: var(--text-muted, #94a3b8);
+        border-radius: 4px;
+        transition: all 0.15s;
+    }
+
+        .modal-close:hover {
+            background: var(--bg-hover, #e2e8f0);
+            color: var(--text-primary, #1e293b);
+        }
+
+    .modal-body {
+        padding: 1.5rem;
+        overflow-y: auto;
+        max-height: calc(90vh - 140px);
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--border-color, #e2e8f0);
+        background: var(--bg-light, #f8fafc);
+    }
+
+    /* Score Info */
+    .score-info {
+        background: var(--bg-light, #f8fafc);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.375rem 0;
+    }
+
+        .info-row:not(:last-child) {
+            border-bottom: 1px solid var(--border-color, #e2e8f0);
+        }
+
+    .info-label {
+        font-size: 0.8125rem;
+        color: var(--text-muted, #64748b);
+    }
+
+    .info-value {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--text-primary, #1e293b);
+    }
+
+    /* Form Group */
+    .form-group {
+        margin-bottom: 1.25rem;
+    }
+
+        .form-group label {
+            display: block;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--text-secondary, #475569);
+            margin-bottom: 0.5rem;
+        }
+
+    /* RAG Selector */
+    .rag-selector {
+        display: flex;
+        gap: 0.75rem;
+    }
+
+    .rag-option {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        border: 2px solid var(--border-color, #e2e8f0);
+        border-radius: 8px;
+        background: var(--card-bg, white);
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: all 0.15s;
+    }
+
+        .rag-option:hover {
+            border-color: #94a3b8;
+        }
+
+        .rag-option .rag-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .rag-option.green .rag-dot {
+            background: #22c55e;
+        }
+
+        .rag-option.amber .rag-dot {
+            background: #f59e0b;
+        }
+
+        .rag-option.red .rag-dot {
+            background: #ef4444;
+        }
+
+        .rag-option.green.selected {
+            background: #dcfce7;
+            border-color: #22c55e;
+            color: #166534;
+        }
+
+        .rag-option.amber.selected {
+            background: #fef3c7;
+            border-color: #f59e0b;
+            color: #92400e;
+        }
+
+        .rag-option.red.selected {
+            background: #fee2e2;
+            border-color: #ef4444;
+            color: #991b1b;
+        }
+
+    /* Buttons */
+    .btn {
+        padding: 0.625rem 1.25rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+        border: none;
+    }
+
+    .btn-primary {
+        background: var(--accent-color, #ffd170);
+        color: #333;
+    }
+
+        .btn-primary:hover:not(:disabled) {
+            filter: brightness(0.95);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+    .btn-secondary {
+        background: var(--bg-light, #f1f5f9);
+        color: var(--text-secondary, #475569);
+        border: 1px solid var(--border-color, #e2e8f0);
+    }
+
+        .btn-secondary:hover {
+            background: var(--bg-hover, #e2e8f0);
+        }
+
+    /* Error Message */
+    .error-message {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: #fee2e2;
+        border: 1px solid #fecaca;
+        border-radius: 6px;
+        color: #dc2626;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+    }
+
+        .error-message svg {
+            flex-shrink: 0;
+        }
+
+    /* Enhanced Modal Styles */
+    .modal-dialog.modal-lg {
+        max-width: 580px;
+    }
+
+    .current-rag-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+        .current-rag-badge.rag-green {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .current-rag-badge.rag-amber {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .current-rag-badge.rag-red {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+    .no-rating {
+        color: var(--text-muted, #64748b);
+        font-style: italic;
+    }
+
+    /* Threshold Section */
+    .threshold-section {
+        margin-bottom: 1.5rem;
+        padding: 1rem;
+        background: var(--bg-light, #f8fafc);
+        border-radius: 8px;
+        border: 1px solid var(--border-color, #e2e8f0);
+    }
+
+        .threshold-section label {
+            display: block;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--text-secondary, #475569);
+            margin-bottom: 0.5rem;
+        }
+
+        .threshold-section.no-threshold {
+            background: #fefce8;
+            border-color: #fde047;
+        }
+
+    .threshold-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted, #64748b);
+        margin: 0.5rem 0 0 0;
+    }
+
+    .threshold-preview-bar {
+        display: flex;
+        height: 32px;
+        border-radius: 6px;
+        overflow: hidden;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+    }
+
+    .threshold-segment {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        min-width: 60px;
+    }
+
+        .threshold-segment.green {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+        }
+
+        .threshold-segment.amber {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+
+        .threshold-segment.red {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        .threshold-segment span {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 0 0.5rem;
+        }
+
+    /* Form Row for side-by-side layout */
+    .form-row {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .form-group.half {
+        flex: 1;
+        margin-bottom: 0;
+    }
+
+        .form-group.half .rag-selector {
+            flex-wrap: nowrap;
+        }
+
+        .form-group.half .rag-option {
+            flex: 1;
+            padding: 0.5rem 0.5rem;
+            font-size: 0.75rem;
+        }
+
+    /* Calculated RAG Section */
+    .calculated-rag-section {
+        background: var(--bg-light, #f8fafc);
+        border: 1px solid var(--border-color, #e2e8f0);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .calculated-rag-display {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .calc-label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--text-secondary, #475569);
+    }
+
+    /* Override Toggle */
+    .override-toggle {
+        padding-top: 0.5rem;
+        border-top: 1px dashed var(--border-color, #e2e8f0);
+    }
+
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.8125rem;
+        color: var(--text-secondary, #475569);
+        cursor: pointer;
+    }
+
+        .toggle-label input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-color, #ffd170);
+        }
+
+        .toggle-label span {
+            user-select: none;
+        }
+
+    /* Override Section */
+    .override-section {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color, #e2e8f0);
+    }
+
+        .override-section .form-group {
+            margin-bottom: 0.75rem;
+        }
+
+    /* Score Hint */
+    .score-hint {
+        font-size: 0.8125rem;
+        color: var(--text-muted, #64748b);
+        font-style: italic;
+        margin: 0.5rem 0;
+    }
+
+    /* No threshold warning style */
+    .threshold-section.no-threshold {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+        .threshold-section.no-threshold svg {
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .threshold-section.no-threshold .threshold-hint {
+            margin: 0;
+        }
+
+    /* No Risk Message */
+    .no-risk-message {
+        text-align: center;
+        padding: 2rem 1rem;
+    }
+
+        .no-risk-message svg {
+            color: var(--text-muted, #94a3b8);
+            margin-bottom: 1rem;
+        }
+
+        .no-risk-message h4 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary, #1e293b);
+            margin: 0 0 0.5rem 0;
+        }
+
+        .no-risk-message p {
+            font-size: 0.875rem;
+            color: var(--text-secondary, #475569);
+            margin: 0 0 0.75rem 0;
+        }
+
+        .no-risk-message .hint {
+            font-size: 0.8125rem;
+            color: var(--text-muted, #64748b);
+            font-style: italic;
+        }
+
+    /* Create Risk Modal */
+    .create-risk-intro {
+        font-size: 0.875rem;
+        color: var(--text-secondary, #475569);
+        margin: 0 0 1rem 0;
+        padding: 0.75rem 1rem;
+        background: var(--bg-light, #f0f9ff);
+        border-left: 3px solid var(--accent-color, #ffd170);
+        border-radius: 4px;
+    }
+
+    .create-risk-info {
+        background: var(--bg-light, #f8fafc);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+    }
+
+        .create-risk-info .form-group {
+            margin-bottom: 0;
+        }
+
+            .create-risk-info .form-group + .info-row {
+                margin-top: 0.75rem;
+                padding-top: 0.75rem;
+                border-top: 1px solid var(--border-color, #e2e8f0);
+            }
+
+    .create-risk-divider {
+        display: flex;
+        align-items: center;
+        margin: 1.5rem 0 1rem 0;
+        gap: 1rem;
+    }
+
+        .create-risk-divider::before,
+        .create-risk-divider::after {
+            content: "";
+            flex: 1;
+            border-bottom: 1px dashed var(--border-color, #cbd5e1);
+        }
+
+        .create-risk-divider span {
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--text-secondary, #64748b);
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+    .no-threshold-hint {
+        font-size: 0.8125rem;
+        color: var(--text-muted, #64748b);
+        font-style: italic;
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .form-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted, #64748b);
+        margin-top: 0.25rem;
+    }
+</style>
