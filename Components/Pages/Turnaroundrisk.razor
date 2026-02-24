@@ -401,10 +401,24 @@
 
                             @* Score Required Mode (with threshold) *@
                             <div class="form-group">
-                                <label>Score *</label>
-                                <RadzenNumeric @bind-Value="scoreRequest.Score" Min="0" Max="999" Style="width: 100%;"
-                                               Placeholder="Enter actual value (required)" TValue="decimal"
-                                               Change="@OnScoreChanged" />
+                                <label>@(IsEditingThresholdScaleMode ? "Score Band *" : "Score *")</label>
+                                @if (IsEditingThresholdScaleMode)
+                                {
+                                    <RadzenDropDown @bind-Value="selectedThresholdBandValue"
+                                                    Data="@thresholdScoreBands"
+                                                    TextProperty="Label"
+                                                    ValueProperty="Value"
+                                                    Placeholder="Select threshold band"
+                                                    Style="width: 100%;"
+                                                    TValue="decimal?"
+                                                    Change="@OnThresholdBandChanged" />
+                                }
+                                else
+                                {
+                                    <RadzenNumeric @bind-Value="scoreRequest.Score" Min="0" Max="999" Style="width: 100%;"
+                                                   Placeholder="Enter actual value (required)" TValue="decimal"
+                                                   Change="@OnScoreChanged" />
+                                }
                             </div>
 
                             @* Show calculated RAG *@
@@ -644,10 +658,24 @@
                         </div>
 
                         <div class="form-group">
-                            <label>Score</label>
-                            <RadzenNumeric @bind-Value="newRiskScore" Min="0" Max="999" Style="width: 100%;"
-                                           Placeholder="Enter score value" TValue="decimal"
-                                           Change="@OnNewRiskScoreChanged" />
+                            <label>@(IsNewRiskThresholdScaleMode ? "Score Band" : "Score")</label>
+                            @if (IsNewRiskThresholdScaleMode)
+                            {
+                                <RadzenDropDown @bind-Value="selectedNewRiskThresholdBandValue"
+                                                Data="@thresholdScoreBands"
+                                                TextProperty="Label"
+                                                ValueProperty="Value"
+                                                Placeholder="Select threshold band"
+                                                Style="width: 100%;"
+                                                TValue="decimal?"
+                                                Change="@OnNewRiskThresholdBandChanged" />
+                            }
+                            else
+                            {
+                                <RadzenNumeric @bind-Value="newRiskScore" Min="0" Max="999" Style="width: 100%;"
+                                               Placeholder="Enter score value" TValue="decimal"
+                                               Change="@OnNewRiskScoreChanged" />
+                            }
                         </div>
 
                         @if (newRiskScore > 0 && !string.IsNullOrEmpty(newRiskCalculatedRAG))
@@ -714,6 +742,13 @@
     private string? overrideReason = null;
     private string? autoCalculatedRAG = null;
 
+
+    private class ThresholdScoreBandOption
+    {
+        public decimal Value { get; set; }
+        public string Label { get; set; } = "";
+    }
+
     // Create Risk Modal state
     private bool showCreateRiskDialog = false;
     private bool isCreatingRisk = false;
@@ -725,6 +760,24 @@
     private List<RiskCategoryDto> createRiskCategories = new();
     private string createRiskServiceName = "";
     private string createRiskFacilityName = "";
+
+    private static readonly List<ThresholdScoreBandOption> thresholdScoreBands = new()
+    {
+        new() { Value = 1m, Label = "Low" },
+        new() { Value = 2m, Label = "Medium" },
+        new() { Value = 3m, Label = "High" },
+        new() { Value = 4m, Label = "Extreme" }
+    };
+
+    private decimal? selectedThresholdBandValue;
+    private decimal? selectedNewRiskThresholdBandValue;
+
+    private bool IsEditingThresholdScaleMode =>
+        NormalizeRatingType(scoreRequest.RatingType) is "threshold" or "threshold_range";
+
+    private bool IsNewRiskThresholdScaleMode =>
+        NormalizeRatingType(newRiskRequest.RatingType) is "threshold" or "threshold_range";
+
 
     private List<SiteDto> sites = new();
     private List<SiteDto> filteredSites = new();
@@ -1160,6 +1213,91 @@
         };
     }
 
+
+    private static string NormalizeRatingType(string? ratingType)
+    {
+        return ratingType?.Trim().ToLowerInvariant() ?? string.Empty;
+    }
+
+    private static decimal? GetThresholdBandValue(string? ragRating)
+    {
+        return NormalizeRagValue(ragRating) switch
+        {
+            "GREEN" => 1m,
+            "AMB" => 2m,
+            "RED" => 3m,
+            "EXTREME" => 4m,
+            _ => null
+        };
+    }
+
+    private static string NormalizeRagValue(string? ragRating)
+    {
+        return ragRating?.Trim().ToUpperInvariant() switch
+        {
+            "GREEN" or "LOW" => "GREEN",
+            "AMBER" or "AMB" or "MEDIUM" or "MODERATE" => "AMB",
+            "RED" or "HIGH" => "RED",
+            "EXTREME" => "EXTREME",
+            _ => ragRating?.Trim().ToUpperInvariant() ?? string.Empty
+        };
+    }
+
+    private static string GetRagFromBandValue(decimal? value)
+    {
+        return value switch
+        {
+            1m => "GREEN",
+            2m => "AMB",
+            3m => "RED",
+            4m => "EXTREME",
+            _ => ""
+        };
+    }
+
+    private void SyncSelectedThresholdBandFromRag()
+    {
+        selectedThresholdBandValue = IsEditingThresholdScaleMode
+            ? GetThresholdBandValue(scoreRequest.RAGRating)
+            : null;
+    }
+
+    private void SyncNewRiskSelectedThresholdBandFromRag()
+    {
+        selectedNewRiskThresholdBandValue = IsNewRiskThresholdScaleMode
+            ? GetThresholdBandValue(newRiskCalculatedRAG)
+            : null;
+    }
+
+    private void OnThresholdBandChanged(object? value)
+    {
+        selectedThresholdBandValue = value as decimal?;
+        if (value is decimal decimalValue)
+        {
+            selectedThresholdBandValue = decimalValue;
+        }
+
+        scoreRequest.Score = selectedThresholdBandValue ?? 0;
+        scoreRequest.RAGRating = GetRagFromBandValue(selectedThresholdBandValue);
+        autoCalculatedRAG = scoreRequest.RAGRating;
+
+        StateHasChanged();
+    }
+
+    private void OnNewRiskThresholdBandChanged(object? value)
+    {
+        selectedNewRiskThresholdBandValue = value as decimal?;
+        if (value is decimal decimalValue)
+        {
+            selectedNewRiskThresholdBandValue = decimalValue;
+        }
+
+        newRiskScore = selectedNewRiskThresholdBandValue ?? 0;
+        newRiskCalculatedRAG = GetRagFromBandValue(selectedNewRiskThresholdBandValue);
+
+        StateHasChanged();
+    }
+
     // Score Editor Methods
     private async Task OpenScoreEditor(int trRiskId, string riskName, string? facilityName)
     {
@@ -1188,7 +1326,8 @@
                 RAGRating = "",
                 Score = 0,
                 Notes = "",
-                EnteredBy = 1 // TODO: Get from auth context
+                EnteredBy = 1, // TODO: Get from auth context
+                RatingType = null
             };
 
         // Load risk details - this will populate scoreRequest with existing values if any
@@ -1293,7 +1432,8 @@
                 RAGRating = "",
                 Score = 0,
                 Notes = "",
-                EnteredBy = 1 // TODO: Get from auth context
+                EnteredBy = 1, // TODO: Get from auth context
+                RatingType = null
             };
 
         // Load risk details - this will populate scoreRequest with existing values if any
@@ -1319,6 +1459,7 @@
                 editingRiskCategoryId = risk.RiskCategoryId;
                 editingSiteId = risk.SiteId;
                 editingServiceId = risk.ServiceId;
+                scoreRequest.RatingType = risk.RatingType;
 
                 // Get threshold for this risk's category, site, and service
                 var thresholds = await RiskService.GetTRRiskThresholdsAsync(
@@ -1336,13 +1477,13 @@
                     .OrderByDescending(s => s.Id)
                     .FirstOrDefault();
 
-                currentRAGRating = monthScore?.RAGRating;
+                currentRAGRating = NormalizeRagValue(monthScore?.RAGRating);
 
                 // Pre-populate the score request with existing values
                 if (monthScore != null)
                 {
                     scoreRequest.Score = monthScore.Score;
-                    scoreRequest.RAGRating = monthScore.RAGRating ?? "";
+                    scoreRequest.RAGRating = NormalizeRagValue(monthScore.RAGRating);
                     scoreRequest.Notes = ""; // Don't pre-fill notes, user can add new ones
 
                     // If threshold exists and score > 0, calculate what the auto RAG should be
@@ -1361,7 +1502,11 @@
                 else
                 {
                     isNewScore = true;
+                    scoreRequest.RAGRating = "";
+                    scoreRequest.Score = 0;
                 }
+
+                SyncSelectedThresholdBandFromRag();
             }
         }
         catch (Exception ex)
@@ -1372,12 +1517,18 @@
 
     private void SelectRAG(string rating)
     {
-        scoreRequest.RAGRating = rating;
+        scoreRequest.RAGRating = NormalizeRagValue(rating);
+        SyncSelectedThresholdBandFromRag();
         StateHasChanged();
     }
 
     private void OnScoreChanged(decimal value)
     {
+        if (IsEditingThresholdScaleMode)
+        {
+            return;
+        }
+
         // Auto-calculate RAG based on threshold if available
         if (editingThreshold != null && value > 0)
         {
@@ -1397,7 +1548,7 @@
             // If not in override mode, use the calculated RAG
             if (!isOverrideMode)
             {
-                scoreRequest.RAGRating = autoCalculatedRAG;
+                scoreRequest.RAGRating = NormalizeRagValue(autoCalculatedRAG);
             }
             StateHasChanged();
         }
@@ -1412,7 +1563,7 @@
         if (!isOverrideMode)
         {
             // Switching back to auto mode - reset to calculated RAG
-            scoreRequest.RAGRating = autoCalculatedRAG ?? "";
+            scoreRequest.RAGRating = NormalizeRagValue(autoCalculatedRAG);
             overrideReason = null;
         }
         StateHasChanged();
@@ -1446,6 +1597,7 @@
         showScoreDialog = false;
         saveError = null;
         scoreRequest = new AddRiskScoreRequest();
+        selectedThresholdBandValue = null;
         isOverrideMode = false;
         overrideReason = null;
         autoCalculatedRAG = null;
@@ -1484,6 +1636,8 @@
 
         try
         {
+            scoreRequest.RAGRating = NormalizeRagValue(scoreRequest.RAGRating);
+
             // If in override mode, append the override reason to notes
             if (isOverrideMode && !string.IsNullOrWhiteSpace(overrideReason))
             {
@@ -1506,6 +1660,7 @@
                 // Reset dialog state
                 showScoreDialog = false;
                 scoreRequest = new AddRiskScoreRequest();
+                selectedThresholdBandValue = null;
                 isOverrideMode = false;
                 overrideReason = null;
                 autoCalculatedRAG = null;
@@ -1542,6 +1697,7 @@
         isCreatingRisk = false;
         newRiskScore = 0;
         newRiskCalculatedRAG = null;
+        selectedNewRiskThresholdBandValue = null;
         newRiskThreshold = null;
 
         createRiskServiceName = serviceName;
@@ -1559,6 +1715,8 @@
                 Status = "Active"
             };
 
+        UpdateCreateRiskRatingType();
+
         // Try to load threshold for this category/site/service
         await LoadNewRiskThreshold();
 
@@ -1574,6 +1732,7 @@
         isCreatingRisk = false;
         newRiskScore = 0;
         newRiskCalculatedRAG = null;
+        selectedNewRiskThresholdBandValue = null;
         newRiskThreshold = null;
 
         createRiskServiceName = ""; // User will select
@@ -1598,6 +1757,7 @@
             createRiskCategories = await RiskService.GetCategoriesAsync(selectedServiceId.Value);
         }
 
+        UpdateCreateRiskRatingType();
         showCreateRiskDialog = true;
         StateHasChanged();
     }
@@ -1606,6 +1766,14 @@
     {
         showCreateRiskDialog = false;
         createRiskError = null;
+    }
+
+    private void UpdateCreateRiskRatingType()
+    {
+        var category = createRiskCategories.FirstOrDefault(c => c.Id == newRiskRequest.RiskCategoryId)
+                       ?? allCategories.FirstOrDefault(c => c.Id == newRiskRequest.RiskCategoryId);
+
+        newRiskRequest.RatingType = category?.RatingType;
     }
 
     private async Task OnCreateRiskServiceChanged()
@@ -1622,18 +1790,22 @@
 
         // Reset category selection
         newRiskRequest.RiskCategoryId = 0;
+        newRiskRequest.RatingType = null;
         newRiskThreshold = null;
         newRiskScore = 0;
+        selectedNewRiskThresholdBandValue = null;
         newRiskCalculatedRAG = null;
     }
 
     private async Task OnCreateRiskCategoryChanged()
     {
-        // Update the threshold when category changes
+        // Update rating type + threshold when category changes
+        UpdateCreateRiskRatingType();
         await LoadNewRiskThreshold();
 
         // Reset score
         newRiskScore = 0;
+        selectedNewRiskThresholdBandValue = null;
         newRiskCalculatedRAG = null;
     }
 
@@ -1652,10 +1824,17 @@
         {
             newRiskThreshold = null;
         }
+
+        SyncNewRiskSelectedThresholdBandFromRag();
     }
 
     private void OnNewRiskScoreChanged(decimal value)
     {
+        if (IsNewRiskThresholdScaleMode)
+        {
+            return;
+        }
+
         if (newRiskThreshold != null && value > 0)
         {
             if (value <= newRiskThreshold.GreenMax)
@@ -1669,6 +1848,8 @@
         {
             newRiskCalculatedRAG = null;
         }
+
+        SyncNewRiskSelectedThresholdBandFromRag();
     }
 
     private bool CanCreateRisk()
@@ -1725,7 +1906,8 @@
                         RatingDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1),
                         RAGRating = newRiskCalculatedRAG,
                         Score = newRiskScore,
-                        EnteredBy = 1 // TODO: Get from auth context
+                        EnteredBy = 1, // TODO: Get from auth context
+                        RatingType = newRiskRequest.RatingType
                     };
 
                 var scoreResult = await RiskService.AddTRRiskScoreAsync(scoreRequest);
