@@ -784,19 +784,19 @@
         }
     }
 
-    private void OnBenchmarkNumericChanged(object value)
+    private void OnBenchmarkNumericChanged(decimal value)
     {
-        selectedBenchmarkBand = MapToBandValue(currentThreshold.BenchmarkValue);
+        selectedBenchmarkBand = MapToBandValue(value);
     }
 
-    private void OnGreenNumericChanged(object value)
+    private void OnGreenNumericChanged(decimal value)
     {
-        selectedGreenBand = MapToBandValue(currentThreshold.GreenMax);
+        selectedGreenBand = MapToBandValue(value);
     }
 
-    private void OnAmberNumericChanged(object value)
+    private void OnAmberNumericChanged(decimal value)
     {
-        selectedAmberBand = MapToBandValue(currentThreshold.AmberMax);
+        selectedAmberBand = MapToBandValue(value);
     }
 
     private void SyncBandSelections()
