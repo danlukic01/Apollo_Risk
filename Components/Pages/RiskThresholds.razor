@@ -173,20 +173,47 @@
                         <div class="form-group">
                             <label>Benchmark Value *</label>
                             <RadzenNumeric @bind-Value="@currentThreshold.BenchmarkValue"
+                                           Change="@OnBenchmarkNumericChanged"
                                            Min="0" Max="10" Step="0.1m"
                                            Style="width: 100%;" />
+                            <RadzenDropDown @bind-Value="@selectedBenchmarkBand"
+                                            Data="@riskScoreBands"
+                                            TextProperty="Label"
+                                            ValueProperty="Value"
+                                            Placeholder="Or choose Low/Medium/High/Extreme"
+                                            AllowClear="true"
+                                            Change="@OnBenchmarkBandChanged"
+                                            Style="width: 100%;" />
                         </div>
                         <div class="form-group">
                             <label>Green Maximum</label>
                             <RadzenNumeric @bind-Value="@currentThreshold.GreenMax"
+                                           Change="@OnGreenNumericChanged"
                                            Min="0" Max="10" Step="0.1m"
                                            Style="width: 100%;" />
+                            <RadzenDropDown @bind-Value="@selectedGreenBand"
+                                            Data="@riskScoreBands"
+                                            TextProperty="Label"
+                                            ValueProperty="Value"
+                                            Placeholder="Or choose Low/Medium/High/Extreme"
+                                            AllowClear="true"
+                                            Change="@OnGreenBandChanged"
+                                            Style="width: 100%;" />
                         </div>
                         <div class="form-group full-width">
                             <label>Amber Maximum</label>
                             <RadzenNumeric @bind-Value="@currentThreshold.AmberMax"
+                                           Change="@OnAmberNumericChanged"
                                            Min="0" Max="10" Step="0.1m"
                                            Style="width: 100%;" />
+                            <RadzenDropDown @bind-Value="@selectedAmberBand"
+                                            Data="@riskScoreBands"
+                                            TextProperty="Label"
+                                            ValueProperty="Value"
+                                            Placeholder="Or choose Low/Medium/High/Extreme"
+                                            AllowClear="true"
+                                            Change="@OnAmberBandChanged"
+                                            Style="width: 100%;" />
                             <span class="form-hint">Values above this are considered Red</span>
                         </div>
                     </div>
@@ -616,6 +643,24 @@
     private TRRiskThresholdDto currentThreshold = new();
     private TRRiskThresholdDto? thresholdToDelete;
 
+    private decimal? selectedBenchmarkBand;
+    private decimal? selectedGreenBand;
+    private decimal? selectedAmberBand;
+
+    private class RiskScoreBandOption
+    {
+        public decimal Value { get; set; }
+        public string Label { get; set; } = string.Empty;
+    }
+
+    private static readonly List<RiskScoreBandOption> riskScoreBands = new()
+    {
+        new() { Value = 1m, Label = "Low" },
+        new() { Value = 2m, Label = "Medium" },
+        new() { Value = 3m, Label = "High" },
+        new() { Value = 4m, Label = "Extreme" }
+    };
+
     protected override async Task OnInitializedAsync()
     {
         await LoadLookups();
@@ -680,6 +725,7 @@
                 GreenMax = 3.9m,
                 AmberMax = 6.9m
             };
+        SyncBandSelections();
         isEditing = false;
         showDialog = true;
     }
@@ -697,6 +743,7 @@
                 GreenMax = threshold.GreenMax,
                 AmberMax = threshold.AmberMax
             };
+        SyncBandSelections();
         isEditing = true;
         showDialog = true;
     }
@@ -705,6 +752,85 @@
     {
         showDialog = false;
         currentThreshold = new();
+        selectedBenchmarkBand = null;
+        selectedGreenBand = null;
+        selectedAmberBand = null;
+    }
+
+    private void OnBenchmarkBandChanged(object value)
+    {
+        if (TryConvertToDecimal(value, out var selectedBand))
+        {
+            currentThreshold.BenchmarkValue = selectedBand;
+            selectedBenchmarkBand = selectedBand;
+        }
+    }
+
+    private void OnGreenBandChanged(object value)
+    {
+        if (TryConvertToDecimal(value, out var selectedBand))
+        {
+            currentThreshold.GreenMax = selectedBand;
+            selectedGreenBand = selectedBand;
+        }
+    }
+
+    private void OnAmberBandChanged(object value)
+    {
+        if (TryConvertToDecimal(value, out var selectedBand))
+        {
+            currentThreshold.AmberMax = selectedBand;
+            selectedAmberBand = selectedBand;
+        }
+    }
+
+    private void OnBenchmarkNumericChanged(object value)
+    {
+        selectedBenchmarkBand = MapToBandValue(currentThreshold.BenchmarkValue);
+    }
+
+    private void OnGreenNumericChanged(object value)
+    {
+        selectedGreenBand = MapToBandValue(currentThreshold.GreenMax);
+    }
+
+    private void OnAmberNumericChanged(object value)
+    {
+        selectedAmberBand = MapToBandValue(currentThreshold.AmberMax);
+    }
+
+    private void SyncBandSelections()
+    {
+        selectedBenchmarkBand = MapToBandValue(currentThreshold.BenchmarkValue);
+        selectedGreenBand = MapToBandValue(currentThreshold.GreenMax);
+        selectedAmberBand = MapToBandValue(currentThreshold.AmberMax);
+    }
+
+    private static decimal? MapToBandValue(decimal value)
+    {
+        return riskScoreBands.Any(b => b.Value == value) ? value : null;
+    }
+
+    private static bool TryConvertToDecimal(object value, out decimal converted)
+    {
+        switch (value)
+        {
+            case decimal decimalValue:
+                converted = decimalValue;
+                return true;
+            case double doubleValue:
+                converted = (decimal)doubleValue;
+                return true;
+            case int intValue:
+                converted = intValue;
+                return true;
+            case string stringValue when decimal.TryParse(stringValue, out var parsed):
+                converted = parsed;
+                return true;
+            default:
+                converted = 0;
+                return false;
+        }
     }
 
     private async Task SaveThreshold()
