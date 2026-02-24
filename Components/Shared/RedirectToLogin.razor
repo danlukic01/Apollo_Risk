@@ -1,0 +1,10 @@
+@inject NavigationManager NavigationManager
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Redirect to Azure AD login
+        var returnUrl = Uri.EscapeDataString(NavigationManager.Uri);
+        NavigationManager.NavigateTo($"/MicrosoftIdentity/Account/SignIn?redirectUri={returnUrl}", forceLoad: true);
+    }
+}

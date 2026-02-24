@@ -1,0 +1,366 @@
+@page "/risksummary"
+@inject IRiskService RiskService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Risk Summary Report - Apollo Risk</PageTitle>
+
+<div class="report-page">
+    <div class="page-header">
+        <div class="header-icon">
+            <RadzenIcon Icon="summarize" />
+        </div>
+        <div class="header-content">
+            <h1>Risk Summary Report</h1>
+            <p>Comprehensive risk analysis by site, category, and owner</p>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+        <div class="filter-group">
+            <span class="filter-label">Service:</span>
+            <RadzenDropDown @bind-Value="selectedServiceId" Data="@services" TextProperty="Name"
+                            ValueProperty="Id" Placeholder="All Services" AllowClear="true"
+                            Change="@OnFilterChanged" Style="width: 200px;" />
+        </div>
+        <div class="filter-group">
+            <span class="filter-label">Site:</span>
+            <RadzenDropDown @bind-Value="selectedSiteId" Data="@sites" TextProperty="Name"
+                            ValueProperty="Id" Placeholder="All Sites" AllowClear="true"
+                            Change="@OnFilterChanged" Style="width: 200px;" />
+        </div>
+        <div class="filter-group" style="margin-left: auto; display: flex; gap: 0.5rem;">
+            <button class="btn-download btn-download-pdf" @onclick="ExportPdf" disabled="@isLoading" title="Export PDF">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                PDF
+            </button>
+            <button class="btn-download" @onclick="ExportExcel" disabled="@isLoading" title="Export Excel">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Excel
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="loading-container">
+            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+        </div>
+    }
+    else
+    {
+        <!-- Summary by Site -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <RadzenIcon Icon="location_city" style="color: var(--primary-color);" />
+                    Risk Summary by Site
+                </h3>
+                <span class="record-count">@siteSummary.Count sites</span>
+            </div>
+            <div class="card-body" style="padding: 0;">
+                <RadzenDataGrid Data="@siteSummary" TItem="RiskBySiteSummaryDto" AllowSorting="true"
+                                AllowPaging="true" PageSize="10" PagerHorizontalAlign="HorizontalAlign.Center">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="RiskBySiteSummaryDto" Property="SiteName" Title="Site" Width="200px" />
+                        <RadzenDataGridColumn TItem="RiskBySiteSummaryDto" Property="TotalRisks" Title="Total" Width="80px" TextAlign="TextAlign.Center" />
+                        <RadzenDataGridColumn TItem="RiskBySiteSummaryDto" Property="HighRisk" Title="High" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count high">@item.HighRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskBySiteSummaryDto" Property="MediumRisk" Title="Medium" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count medium">@item.MediumRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskBySiteSummaryDto" Property="LowRisk" Title="Low" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count low">@item.LowRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskBySiteSummaryDto" Property="AverageScore" Title="Avg Score" Width="100px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="score-badge @GetScoreClass(item.AverageScore)">@item.AverageScore.ToString("N1")</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskBySiteSummaryDto" Title="Distribution" Width="200px">
+                            <Template Context="item">
+                                <div class="distribution-bar">
+                                    @if (item.TotalRisks > 0)
+                                    {
+                                        <div class="bar-segment high" style="width: @((item.HighRisk * 100.0 / item.TotalRisks).ToString("N0"))%"></div>
+                                        <div class="bar-segment medium" style="width: @((item.MediumRisk * 100.0 / item.TotalRisks).ToString("N0"))%"></div>
+                                        <div class="bar-segment low" style="width: @((item.LowRisk * 100.0 / item.TotalRisks).ToString("N0"))%"></div>
+                                    }
+                                </div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </div>
+        </div>
+
+        <!-- Summary by Category -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <RadzenIcon Icon="category" style="color: var(--warning-color);" />
+                    Risk Summary by Category
+                </h3>
+                <span class="record-count">@categorySummary.Count categories</span>
+            </div>
+            <div class="card-body" style="padding: 0;">
+                <RadzenDataGrid Data="@categorySummary" TItem="RiskByCategorySummaryDto" AllowSorting="true"
+                                AllowPaging="true" PageSize="10" PagerHorizontalAlign="HorizontalAlign.Center">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="RiskByCategorySummaryDto" Property="CategoryName" Title="Category" Width="200px" />
+                        <RadzenDataGridColumn TItem="RiskByCategorySummaryDto" Property="TotalRisks" Title="Total" Width="80px" TextAlign="TextAlign.Center" />
+                        <RadzenDataGridColumn TItem="RiskByCategorySummaryDto" Property="HighRisk" Title="High" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count high">@item.HighRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskByCategorySummaryDto" Property="MediumRisk" Title="Medium" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count medium">@item.MediumRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskByCategorySummaryDto" Property="LowRisk" Title="Low" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count low">@item.LowRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskByCategorySummaryDto" Property="AverageScore" Title="Avg Score" Width="100px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="score-badge @GetScoreClass(item.AverageScore)">@item.AverageScore.ToString("N1")</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </div>
+        </div>
+
+        <!-- Summary by Owner -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <RadzenIcon Icon="person" style="color: var(--info-color);" />
+                    Risk Summary by Owner
+                </h3>
+                <span class="record-count">@ownerSummary.Count owners</span>
+            </div>
+            <div class="card-body" style="padding: 0;">
+                <RadzenDataGrid Data="@ownerSummary" TItem="RiskByOwnerSummaryDto" AllowSorting="true"
+                                AllowPaging="true" PageSize="10" PagerHorizontalAlign="HorizontalAlign.Center">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="RiskByOwnerSummaryDto" Property="OwnerName" Title="Owner" Width="200px" />
+                        <RadzenDataGridColumn TItem="RiskByOwnerSummaryDto" Property="TotalRisks" Title="Total" Width="80px" TextAlign="TextAlign.Center" />
+                        <RadzenDataGridColumn TItem="RiskByOwnerSummaryDto" Property="HighRisk" Title="High" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count high">@item.HighRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskByOwnerSummaryDto" Property="MediumRisk" Title="Medium" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count medium">@item.MediumRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskByOwnerSummaryDto" Property="LowRisk" Title="Low" Width="80px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="risk-count low">@item.LowRisk</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="RiskByOwnerSummaryDto" Property="AverageScore" Title="Avg Score" Width="100px" TextAlign="TextAlign.Center">
+                            <Template Context="item">
+                                <span class="score-badge @GetScoreClass(item.AverageScore)">@item.AverageScore.ToString("N1")</span>
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </div>
+        </div>
+
+        <!-- Help Section -->
+        <DynamicHelpSection PageKey="RiskSummary" ThresholdTitle="Risk Score Thresholds" ShowPercentage="false" />
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private int? selectedServiceId;
+    private int? selectedSiteId;
+
+    private List<ServiceDto> services = new();
+    private List<SiteDto> sites = new();
+    private List<RiskBySiteSummaryDto> siteSummary = new();
+    private List<RiskByCategorySummaryDto> categorySummary = new();
+    private List<RiskByOwnerSummaryDto> ownerSummary = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadReferenceData();
+        await LoadReportData();
+    }
+
+    private async Task LoadReferenceData()
+    {
+        services = await RiskService.GetServicesAsync();
+        sites = await RiskService.GetAllSitesAsync();
+    }
+
+    private async Task LoadReportData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var siteTask = RiskService.GetRiskBySiteSummaryAsync(selectedServiceId);
+            var categoryTask = RiskService.GetRiskByCategorySummaryAsync(selectedSiteId, selectedServiceId);
+            var ownerTask = RiskService.GetRiskByOwnerSummaryAsync(selectedSiteId, selectedServiceId);
+
+            await Task.WhenAll(siteTask, categoryTask, ownerTask);
+
+            siteSummary = await siteTask;
+            categorySummary = await categoryTask;
+            ownerSummary = await ownerTask;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading report data: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnFilterChanged()
+    {
+        await LoadReportData();
+    }
+
+    private string GetScoreClass(decimal score)
+    {
+        return score switch
+        {
+            >= 7 => "high",
+            >= 4 => "medium",
+            _ => "low"
+        };
+    }
+
+    private async Task ExportPdf()
+    {
+        // TODO: Implement PDF export
+    }
+
+    private async Task ExportExcel()
+    {
+        // TODO: Implement Excel export
+    }
+}
+
+<style>
+    .report-page {
+        padding: 0;
+    }
+
+    .report-page .filter-bar {
+        position: sticky;
+        top: 5.5rem;
+        z-index: 45;
+    }
+
+    .record-count {
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+        background: var(--bg-light);
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+    }
+
+    .risk-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 32px;
+        padding: 0.25rem 0.5rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8125rem;
+    }
+
+        .risk-count.high {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        .risk-count.medium {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning-color);
+        }
+
+        .risk-count.low {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+        }
+
+    .score-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-weight: 600;
+        font-size: 0.8125rem;
+    }
+
+        .score-badge.high {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+        }
+
+        .score-badge.medium {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning-color);
+        }
+
+        .score-badge.low {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+        }
+
+    .distribution-bar {
+        display: flex;
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: var(--bg-light);
+    }
+
+    .bar-segment {
+        height: 100%;
+    }
+
+        .bar-segment.high {
+            background: var(--danger-color);
+        }
+
+        .bar-segment.medium {
+            background: var(--warning-color);
+        }
+
+        .bar-segment.low {
+            background: var(--success-color);
+        }
+</style>

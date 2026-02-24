@@ -1,0 +1,775 @@
+@page "/riskthresholds"
+@inject IRiskService RiskService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Risk Thresholds - Apollo Risk</PageTitle>
+
+<div class="settings-page">
+    <div class="page-header">
+        <div class="header-content">
+            <div class="header-icon">
+                <RadzenIcon Icon="tune" />
+            </div>
+            <div>
+                <h1>Risk Thresholds</h1>
+                <p>Configure RAG rating thresholds for risk assessment</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <RadzenButton Icon="add" Text="Add Threshold" ButtonStyle="ButtonStyle.Primary" Click="@ShowAddDialog" />
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-card">
+        <div class="filter-grid">
+            <div class="filter-item">
+                <label>Site</label>
+                <RadzenDropDown @bind-Value="@filterSiteId"
+                                Data="@sites"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Sites"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 100%;" />
+            </div>
+            <div class="filter-item">
+                <label>Service</label>
+                <RadzenDropDown @bind-Value="@filterServiceId"
+                                Data="@services"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Services"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 100%;" />
+            </div>
+            <div class="filter-item">
+                <label>Category</label>
+                <RadzenDropDown @bind-Value="@filterCategoryId"
+                                Data="@categories"
+                                TextProperty="Name"
+                                ValueProperty="Id"
+                                Placeholder="All Categories"
+                                AllowClear="true"
+                                Change="@OnFilterChanged"
+                                Style="width: 100%;" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Thresholds Grid -->
+    <div class="data-card">
+        @if (isLoading)
+        {
+            <div class="loading-container">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                <span>Loading thresholds...</span>
+            </div>
+        }
+        else
+        {
+            <RadzenDataGrid @ref="thresholdsGrid"
+                            Data="@filteredThresholds"
+                            TItem="TRRiskThresholdDto"
+                            AllowFiltering="true"
+                            AllowSorting="true"
+                            AllowPaging="true"
+                            PageSize="15"
+                            PagerHorizontalAlign="HorizontalAlign.Center"
+                            ShowPagingSummary="true"
+                            Class="risk-data-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Property="SiteName" Title="Site" Width="180px" />
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Property="ServiceName" Title="Service" Width="150px" />
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Property="RiskCategoryName" Title="Category" Width="180px" />
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Property="OwnerName" Title="Owner" Width="150px" />
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Property="BenchmarkValue" Title="Benchmark" Width="120px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="benchmark-value">@item.BenchmarkValue.ToString("F1")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Property="GreenMax" Title="Green (≤)" Width="100px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="threshold-badge green">@item.GreenMax.ToString("F1")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Property="AmberMax" Title="Amber (≤)" Width="100px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="threshold-badge amber">@item.AmberMax.ToString("F1")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Title="Red (>)" Width="100px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="threshold-badge red">&gt;@item.AmberMax.ToString("F1")</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="TRRiskThresholdDto" Title="Actions" Width="120px" TextAlign="TextAlign.Center" Sortable="false" Filterable="false">
+                        <Template Context="item">
+                            <div class="action-buttons">
+                                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => ShowEditDialog(item))" title="Edit" />
+                                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => ConfirmDelete(item))" title="Delete" />
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </div>
+
+    <!-- Help Section -->
+    <DynamicHelpSection PageKey="RiskThresholds" />
+
+    <!-- Add/Edit Dialog -->
+    @if (showDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDialog">
+            <div class="modal-dialog" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>@(isEditing ? "Edit Threshold" : "Add Threshold")</h3>
+                    <button class="modal-close" @onclick="CloseDialog">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Site *</label>
+                            <RadzenDropDown @bind-Value="@currentThreshold.SiteId"
+                                            Data="@sites"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select Site"
+                                            Style="width: 100%;" />
+                        </div>
+                        <div class="form-group">
+                            <label>Service *</label>
+                            <RadzenDropDown @bind-Value="@currentThreshold.ServiceId"
+                                            Data="@services"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select Service"
+                                            Style="width: 100%;" />
+                        </div>
+                        <div class="form-group">
+                            <label>Category *</label>
+                            <RadzenDropDown @bind-Value="@currentThreshold.RiskCategoryId"
+                                            Data="@categories"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select Category"
+                                            Style="width: 100%;" />
+                        </div>
+                        <div class="form-group">
+                            <label>Owner *</label>
+                            <RadzenDropDown @bind-Value="@currentThreshold.OwnerId"
+                                            Data="@owners"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select Owner"
+                                            Style="width: 100%;" />
+                        </div>
+                        <div class="form-group">
+                            <label>Benchmark Value *</label>
+                            <RadzenNumeric @bind-Value="@currentThreshold.BenchmarkValue"
+                                           Min="0" Max="10" Step="0.1m"
+                                           Style="width: 100%;" />
+                        </div>
+                        <div class="form-group">
+                            <label>Green Maximum</label>
+                            <RadzenNumeric @bind-Value="@currentThreshold.GreenMax"
+                                           Min="0" Max="10" Step="0.1m"
+                                           Style="width: 100%;" />
+                        </div>
+                        <div class="form-group full-width">
+                            <label>Amber Maximum</label>
+                            <RadzenNumeric @bind-Value="@currentThreshold.AmberMax"
+                                           Min="0" Max="10" Step="0.1m"
+                                           Style="width: 100%;" />
+                            <span class="form-hint">Values above this are considered Red</span>
+                        </div>
+                    </div>
+
+                    <!-- Threshold Preview -->
+                    <div class="threshold-preview">
+                        <h4>Threshold Preview</h4>
+                        <div class="preview-bar">
+                            <div class="preview-segment green" style="width: @(GetPreviewWidth(currentThreshold.GreenMax))%">
+                                <span>Green (0-@currentThreshold.GreenMax.ToString("F1"))</span>
+                            </div>
+                            <div class="preview-segment amber" style="width: @(GetPreviewWidth(currentThreshold.AmberMax - currentThreshold.GreenMax))%">
+                                <span>Amber (@currentThreshold.GreenMax.ToString("F1")-@currentThreshold.AmberMax.ToString("F1"))</span>
+                            </div>
+                            <div class="preview-segment red" style="width: @(GetPreviewWidth(10 - currentThreshold.AmberMax))%">
+                                <span>Red (&gt;@currentThreshold.AmberMax.ToString("F1"))</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseDialog" />
+                    <RadzenButton Text="@(isEditing ? "Update" : "Create")" ButtonStyle="ButtonStyle.Primary" Click="@SaveThreshold" />
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Delete Confirmation Dialog -->
+    @if (showDeleteConfirm)
+    {
+        <div class="modal-overlay" @onclick="CloseDeleteConfirm">
+            <div class="modal-dialog small" @onclick:stopPropagation="true">
+                <div class="modal-header danger">
+                    <h3>Delete Threshold</h3>
+                    <button class="modal-close" @onclick="CloseDeleteConfirm">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this threshold configuration?</p>
+                    <p class="delete-details">
+                        <strong>@thresholdToDelete?.SiteName</strong> - @thresholdToDelete?.ServiceName - @thresholdToDelete?.RiskCategoryName
+                    </p>
+                    <p class="warning-text">This action cannot be undone.</p>
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseDeleteConfirm" />
+                    <RadzenButton Text="Delete" ButtonStyle="ButtonStyle.Danger" Click="@DeleteThreshold" />
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .settings-page {
+        padding: 0;
+    }
+
+    .settings-page .filter-card {
+        position: sticky;
+        top: 5.5rem;
+        z-index: 45;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .header-content {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .header-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #ffd170 0%, #ffb347 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #1e293b;
+    }
+
+    .header-content h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary, #1e293b);
+        margin: 0;
+    }
+
+    .header-content p {
+        font-size: 0.875rem;
+        color: var(--text-secondary, #64748b);
+        margin: 0;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    /* Filter Card */
+    .filter-card {
+        background: var(--card-bg, #fff);
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid var(--border-color, #e2e8f0);
+    }
+
+    .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+    }
+
+    .filter-item label {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--text-secondary, #64748b);
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+        margin-bottom: 0.375rem;
+    }
+
+    /* Data Card */
+    .data-card {
+        background: var(--card-bg, #fff);
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid var(--border-color, #e2e8f0);
+        margin-bottom: 1.5rem;
+    }
+
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        gap: 1rem;
+        color: var(--text-secondary, #64748b);
+    }
+
+    /* Badges */
+    .benchmark-value {
+        font-weight: 600;
+        color: var(--text-primary, #1e293b);
+    }
+
+    .threshold-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 6px;
+        font-size: 0.8125rem;
+        font-weight: 600;
+    }
+
+        .threshold-badge.green {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+
+        .threshold-badge.amber {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .threshold-badge.red {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+    .action-buttons {
+        display: flex;
+        gap: 0.25rem;
+        justify-content: center;
+    }
+
+    /* Modal */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1rem;
+    }
+
+    .modal-dialog {
+        background: var(--card-bg, #fff);
+        border-radius: 12px;
+        width: 100%;
+        max-width: 600px;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+        .modal-dialog.small {
+            max-width: 450px;
+        }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border-color, #e2e8f0);
+    }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--text-primary, #1e293b);
+        }
+
+        .modal-header.danger {
+            background: #fef2f2;
+        }
+
+            .modal-header.danger h3 {
+                color: #dc2626;
+            }
+
+    .modal-close {
+        background: none;
+        border: none;
+        padding: 0.25rem;
+        cursor: pointer;
+        color: var(--text-secondary, #64748b);
+        border-radius: 4px;
+    }
+
+        .modal-close:hover {
+            background: var(--bg-light, #f1f5f9);
+        }
+
+    .modal-body {
+        padding: 1.5rem;
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--border-color, #e2e8f0);
+        background: var(--bg-light, #f8fafc);
+        border-radius: 0 0 12px 12px;
+    }
+
+    /* Form Grid */
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.375rem;
+    }
+
+        .form-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .form-group label {
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--text-primary, #1e293b);
+        }
+
+    .form-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted, #94a3b8);
+    }
+
+    /* Threshold Preview */
+    .threshold-preview {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        background: var(--bg-light, #f8fafc);
+        border-radius: 8px;
+        border: 1px solid var(--border-color, #e2e8f0);
+    }
+
+        .threshold-preview h4 {
+            margin: 0 0 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-primary, #1e293b);
+        }
+
+    .preview-bar {
+        display: flex;
+        height: 32px;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .preview-segment {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 60px;
+    }
+
+        .preview-segment span {
+            font-size: 0.6875rem;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .preview-segment.green {
+            background: #16a34a;
+            color: white;
+        }
+
+        .preview-segment.amber {
+            background: #d97706;
+            color: white;
+        }
+
+        .preview-segment.red {
+            background: #dc2626;
+            color: white;
+        }
+
+    /* Delete Dialog */
+    .delete-details {
+        background: var(--bg-light, #f8fafc);
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+
+    .warning-text {
+        font-size: 0.875rem;
+        color: #d97706;
+    }
+
+    /* Responsive */
+    @@media (max-width: 768px) {
+        .filter-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .form-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .form-group.full-width {
+            grid-column: 1;
+        }
+    }
+
+    /* Dark Mode */
+    :global(html.theme-dark) .filter-card,
+    :global(html.theme-dark) .data-card {
+        background: #1e293b;
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .modal-dialog {
+        background: #1e293b;
+    }
+
+    :global(html.theme-dark) .modal-header {
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .modal-footer {
+        background: #0f172a;
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .threshold-preview {
+        background: #0f172a;
+        border-color: #334155;
+    }
+
+        :global(html.theme-dark) .threshold-preview h4 {
+            color: #e2e8f0;
+        }
+
+    :global(html.theme-dark) .delete-details {
+        background: #0f172a;
+    }
+</style>
+
+@code {
+    private RadzenDataGrid<TRRiskThresholdDto>? thresholdsGrid;
+
+    private List<TRRiskThresholdDto> thresholds = new();
+    private List<TRRiskThresholdDto> filteredThresholds = new();
+    private List<SiteDto> sites = new();
+    private List<ServiceDto> services = new();
+    private List<RiskCategoryDto> categories = new();
+    private List<UserDto> owners = new();
+
+    private int? filterSiteId;
+    private int? filterServiceId;
+    private int? filterCategoryId;
+
+    private bool isLoading = true;
+    private bool showDialog = false;
+    private bool isEditing = false;
+    private bool showDeleteConfirm = false;
+
+    private TRRiskThresholdDto currentThreshold = new();
+    private TRRiskThresholdDto? thresholdToDelete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLookups();
+        await LoadData();
+    }
+
+    private async Task LoadLookups()
+    {
+        try
+        {
+            sites = await RiskService.GetSitesAsync() ?? new();
+            services = await RiskService.GetServicesAsync() ?? new();
+            categories = await RiskService.GetCategoriesAsync() ?? new();
+            owners = await RiskService.GetUsersAsync() ?? new();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading lookups: {ex.Message}");
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            thresholds = await RiskService.GetTRRiskThresholdsAsync() ?? new();
+            FilterData();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading thresholds: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void FilterData()
+    {
+        filteredThresholds = thresholds.Where(t =>
+            (!filterSiteId.HasValue || t.SiteId == filterSiteId) &&
+            (!filterServiceId.HasValue || t.ServiceId == filterServiceId) &&
+            (!filterCategoryId.HasValue || t.RiskCategoryId == filterCategoryId)
+        ).ToList();
+    }
+
+    private void OnFilterChanged(object value)
+    {
+        FilterData();
+    }
+
+    private void ShowAddDialog()
+    {
+        currentThreshold = new TRRiskThresholdDto
+            {
+                BenchmarkValue = 5.0m,
+                GreenMax = 3.9m,
+                AmberMax = 6.9m
+            };
+        isEditing = false;
+        showDialog = true;
+    }
+
+    private void ShowEditDialog(TRRiskThresholdDto threshold)
+    {
+        currentThreshold = new TRRiskThresholdDto
+            {
+                Id = threshold.Id,
+                SiteId = threshold.SiteId,
+                ServiceId = threshold.ServiceId,
+                RiskCategoryId = threshold.RiskCategoryId,
+                OwnerId = threshold.OwnerId,
+                BenchmarkValue = threshold.BenchmarkValue,
+                GreenMax = threshold.GreenMax,
+                AmberMax = threshold.AmberMax
+            };
+        isEditing = true;
+        showDialog = true;
+    }
+
+    private void CloseDialog()
+    {
+        showDialog = false;
+        currentThreshold = new();
+    }
+
+    private async Task SaveThreshold()
+    {
+        try
+        {
+            if (isEditing)
+            {
+                await RiskService.UpdateTRRiskThresholdAsync(currentThreshold);
+            }
+            else
+            {
+                var request = new CreateThresholdRequest
+                    {
+                        SiteId = currentThreshold.SiteId,
+                        ServiceId = currentThreshold.ServiceId,
+                        RiskCategoryId = currentThreshold.RiskCategoryId,
+                        OwnerId = currentThreshold.OwnerId,
+                        BenchmarkValue = currentThreshold.BenchmarkValue,
+                        GreenMax = currentThreshold.GreenMax,
+                        AmberMax = currentThreshold.AmberMax
+                    };
+                await RiskService.CreateTRRiskThresholdAsync(request);
+            }
+
+            CloseDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving threshold: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDelete(TRRiskThresholdDto threshold)
+    {
+        thresholdToDelete = threshold;
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        showDeleteConfirm = false;
+        thresholdToDelete = null;
+    }
+
+    private async Task DeleteThreshold()
+    {
+        if (thresholdToDelete != null)
+        {
+            try
+            {
+                await RiskService.DeleteTRRiskThresholdAsync(thresholdToDelete.Id);
+                CloseDeleteConfirm();
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error deleting threshold: {ex.Message}");
+            }
+        }
+    }
+
+    private string GetPreviewWidth(decimal value)
+    {
+        return (value * 10).ToString("F0");
+    }
+}

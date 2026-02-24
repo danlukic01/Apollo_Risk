@@ -1,0 +1,446 @@
+@page "/manageservices"
+@inject IRiskService RiskService
+
+<PageTitle>Manage Services - Apollo Risk</PageTitle>
+
+<div class="settings-page">
+    <div class="page-header">
+        <div class="header-content">
+            <div class="header-icon">
+                <RadzenIcon Icon="business_center" />
+            </div>
+            <div>
+                <h1>Manage Services</h1>
+                <p>Configure risk assessment services</p>
+            </div>
+        </div>
+        <div class="header-actions">
+            <RadzenButton Icon="add" Text="Add Service" ButtonStyle="ButtonStyle.Primary" Click="@ShowAddDialog" />
+        </div>
+    </div>
+
+    <!-- Services Grid -->
+    <div class="data-card">
+        @if (isLoading)
+        {
+            <div class="loading-container">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                <span>Loading services...</span>
+            </div>
+        }
+        else
+        {
+            <RadzenDataGrid @ref="servicesGrid"
+                            Data="@services"
+                            TItem="ServiceDto"
+                            AllowFiltering="true"
+                            AllowSorting="true"
+                            AllowPaging="true"
+                            PageSize="15"
+                            PagerHorizontalAlign="HorizontalAlign.Center"
+                            ShowPagingSummary="true"
+                            Class="risk-data-grid">
+                <Columns>
+                    <RadzenDataGridColumn TItem="ServiceDto" Property="Id" Title="ID" Width="80px" TextAlign="TextAlign.Center" />
+                    <RadzenDataGridColumn TItem="ServiceDto" Property="Name" Title="Service Name" />
+                    <RadzenDataGridColumn TItem="ServiceDto" Title="Risk Categories" Width="280px" TextAlign="TextAlign.Center">
+                        <Template Context="item">
+                            <span class="count-badge">@(GetCategoryCount(item.Id)) categories</span>
+                        </Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="ServiceDto" Title="Actions" Width="120px" TextAlign="TextAlign.Center" Sortable="false" Filterable="false">
+                        <Template Context="item">
+                            <div class="action-buttons">
+                                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small" Click="@(() => ShowEditDialog(item))" title="Edit" />
+                                <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small" Click="@(() => ConfirmDelete(item))" title="Delete" />
+                            </div>
+                        </Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+        }
+    </div>
+
+    <!-- Help Section -->
+    <DynamicHelpSection PageKey="ManageServices" />
+
+    <!-- Add/Edit Dialog -->
+    @if (showDialog)
+    {
+        <div class="modal-overlay" @onclick="CloseDialog">
+            <div class="modal-dialog small" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3>@(isEditing ? "Edit Service" : "Add Service")</h3>
+                    <button class="modal-close" @onclick="CloseDialog">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Service Name *</label>
+                        <RadzenTextBox @bind-Value="@currentService.Name"
+                                       Placeholder="Enter service name"
+                                       Style="width: 100%;" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseDialog" />
+                    <RadzenButton Text="@(isEditing ? "Update" : "Create")" ButtonStyle="ButtonStyle.Primary" Click="@SaveService" />
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Delete Confirmation -->
+    @if (showDeleteConfirm)
+    {
+        <div class="modal-overlay" @onclick="CloseDeleteConfirm">
+            <div class="modal-dialog small" @onclick:stopPropagation="true">
+                <div class="modal-header danger">
+                    <h3>Delete Service</h3>
+                    <button class="modal-close" @onclick="CloseDeleteConfirm">
+                        <RadzenIcon Icon="close" />
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this service?</p>
+                    <p class="delete-details"><strong>@serviceToDelete?.Name</strong></p>
+                    <p class="warning-text">This may affect associated risk categories and risks.</p>
+                </div>
+                <div class="modal-footer">
+                    <RadzenButton Text="Cancel" ButtonStyle="ButtonStyle.Light" Click="@CloseDeleteConfirm" />
+                    <RadzenButton Text="Delete" ButtonStyle="ButtonStyle.Danger" Click="@DeleteService" />
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .settings-page {
+        padding: 0;
+    }
+
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .header-content {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .header-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #ffd170 0%, #ffb347 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #1e293b;
+    }
+
+    .page-header h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin: 0;
+    }
+
+    .page-header p {
+        color: #64748b;
+        margin: 0.25rem 0 0;
+        font-size: 0.875rem;
+    }
+
+    .data-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
+        border: 1px solid #e2e8f0;
+        margin-bottom: 1.5rem;
+    }
+
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem;
+        gap: 1rem;
+        color: #64748b;
+    }
+
+    .count-badge {
+        display: inline-flex;
+        padding: 0.25rem 0.75rem;
+        background: rgba(245, 158, 11, 0.1);
+        color: #F59E0B;
+        border-radius: 9999px;
+        font-size: 0.8125rem;
+        font-weight: 500;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        backdrop-filter: blur(4px);
+    }
+
+    .modal-dialog {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 450px;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+        .modal-header.danger {
+            background: #fef2f2;
+        }
+
+            .modal-header.danger h3 {
+                color: #dc2626;
+            }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+    .modal-close {
+        background: none;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem;
+        cursor: pointer;
+        color: #64748b;
+        display: flex;
+    }
+
+        .modal-close:hover {
+            background: #f1f5f9;
+        }
+
+    .modal-body {
+        padding: 1.5rem;
+    }
+
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        padding: 1rem 1.5rem;
+        border-top: 1px solid #e2e8f0;
+        background: #f8fafc;
+        border-radius: 0 0 12px 12px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+        .form-group label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+        }
+
+    .delete-details {
+        background: #f8fafc;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        margin: 1rem 0;
+    }
+
+    .warning-text {
+        color: #d97706;
+        font-size: 0.875rem;
+    }
+
+    /* Dark Mode */
+    :global(html.theme-dark) .data-card {
+        background: #1e293b;
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .page-header h1 {
+        color: #f1f5f9;
+    }
+
+    :global(html.theme-dark) .page-header p {
+        color: #94a3b8;
+    }
+
+    :global(html.theme-dark) .modal-dialog {
+        background: #1e293b;
+    }
+
+    :global(html.theme-dark) .modal-header {
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .modal-body {
+        color: #f1f5f9;
+    }
+
+    :global(html.theme-dark) .modal-footer {
+        background: #0f172a;
+        border-color: #334155;
+    }
+
+    :global(html.theme-dark) .form-group label {
+        color: #e2e8f0;
+    }
+
+    :global(html.theme-dark) .delete-details {
+        background: #0f172a;
+        border-color: #334155;
+    }
+</style>
+
+@code {
+    private RadzenDataGrid<ServiceDto>? servicesGrid;
+    private List<ServiceDto> services = new();
+    private Dictionary<int, int> categoryCounts = new();
+
+    private bool isLoading = true;
+    private bool showDialog = false;
+    private bool isEditing = false;
+    private bool showDeleteConfirm = false;
+
+    private ServiceDto currentService = new();
+    private ServiceDto? serviceToDelete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            services = await RiskService.GetServicesAsync() ?? new();
+            // Load category counts
+            var categories = await RiskService.GetCategoriesAsync() ?? new();
+            categoryCounts = categories.GroupBy(c => c.ServiceId).ToDictionary(g => g.Key, g => g.Count());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading services: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private int GetCategoryCount(int serviceId) => categoryCounts.GetValueOrDefault(serviceId, 0);
+
+    private void ShowAddDialog()
+    {
+        currentService = new ServiceDto();
+        isEditing = false;
+        showDialog = true;
+    }
+
+    private void ShowEditDialog(ServiceDto service)
+    {
+        currentService = new ServiceDto { Id = service.Id, Name = service.Name };
+        isEditing = true;
+        showDialog = true;
+    }
+
+    private void CloseDialog()
+    {
+        showDialog = false;
+        currentService = new();
+    }
+
+    private async Task SaveService()
+    {
+        if (string.IsNullOrWhiteSpace(currentService.Name)) return;
+
+        try
+        {
+            if (isEditing)
+                await RiskService.UpdateServiceAsync(currentService);
+            else
+                await RiskService.CreateServiceAsync(currentService);
+
+            CloseDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving service: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDelete(ServiceDto service)
+    {
+        serviceToDelete = service;
+        showDeleteConfirm = true;
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        showDeleteConfirm = false;
+        serviceToDelete = null;
+    }
+
+    private async Task DeleteService()
+    {
+        if (serviceToDelete != null)
+        {
+            try
+            {
+                await RiskService.DeleteServiceAsync(serviceToDelete.Id);
+                CloseDeleteConfirm();
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error deleting service: {ex.Message}");
+            }
+        }
+    }
+}

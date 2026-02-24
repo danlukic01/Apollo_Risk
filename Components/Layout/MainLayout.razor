@@ -1,0 +1,313 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<div class="page-wrapper">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">
+                <div class="logo-icon">
+                    <RiskIcon Size="32px" Color="#F59E0B" />
+                </div>
+                <div>
+                    <h1>Apollo</h1>
+                    <span>RISK</span>
+                </div>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <NavMenuSection Title="TURNAROUND RISK">
+                <NavMenuItem Icon="dashboard" Text="Dashboard" Href="/trdashboard" />
+                <NavMenuItem Icon="grid_view" Text="Turnaround Risk" Href="/turnaroundrisk" />
+                <NavMenuItem Icon="summarize" Text="Risk Summary Report" Href="/risksummary" />
+                <NavMenuItem Icon="compare_arrows" Text="Variance Report" Href="/variancereport" />
+            </NavMenuSection>
+
+            <NavMenuSection Title="SETTINGS">
+                <NavMenuItem Icon="warning" Text="Manage Risks" Href="/managerisks" />
+                <NavMenuItem Icon="tune" Text="Manage Risk Thresholds" Href="/riskthresholds" />
+                <NavMenuItem Icon="category" Text="Manage Services" Href="/manageservices" />
+                <NavMenuItem Icon="folder_special" Text="Manage Risk Categories" Href="/riskcategories" />
+                <NavMenuItem Icon="domain" Text="Manage Domains" Href="/managedomains" />
+                <NavMenuItem Icon="people" Text="Manage Users" Href="/manageusers" />
+            </NavMenuSection>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        <header class="header">
+            <div class="header-left">
+                <div class="header-welcome">
+                    <span class="welcome-text">Welcome,</span>
+                    <span class="welcome-name">@displayName</span>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <button class="btn btn-secondary" @onclick="ToggleTheme" title="Toggle theme">
+                    <RadzenIcon Icon="@(isDarkMode ? "light_mode" : "dark_mode")" />
+                </button>
+
+                <div class="user-profile-container">
+                    <div class="user-profile-trigger" @onclick="ToggleDropdown">
+                        <div class="user-avatar">
+                            @GetInitials(displayName)
+                        </div>
+                        <div class="user-info">
+                            <span class="user-name">@displayName</span>
+                            <span class="user-email">@userEmail</span>
+                        </div>
+                        <svg class="dropdown-chevron @(isDropdownOpen ? "open" : "")" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+
+                    @if (isDropdownOpen)
+                    {
+                        <div class="dropdown-overlay" @onclick="CloseDropdown"></div>
+                        <div class="dropdown-menu">
+                            <div class="dropdown-header">
+                                <div class="dropdown-avatar">@GetInitials(displayName)</div>
+                                <div class="dropdown-user-details">
+                                    <span class="dropdown-user-name">@displayName</span>
+                                    <span class="dropdown-user-email">@userEmail</span>
+                                </div>
+                            </div>
+                            <div class="dropdown-divider"></div>
+                            <a href="/profile" class="dropdown-item">
+                                <RadzenIcon Icon="person" />
+                                <span>My Profile</span>
+                            </a>
+                            <div class="dropdown-divider"></div>
+                            <a href="/MicrosoftIdentity/Account/SignOut" class="dropdown-item dropdown-item-danger">
+                                <RadzenIcon Icon="logout" />
+                                <span>Sign Out</span>
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </header>
+
+        <div class="page-content">
+            @Body
+        </div>
+    </main>
+</div>
+
+<ChatWidget />
+
+@code {
+    private string displayName = "User";
+    private string userEmail = "user@example.com";
+    private bool isDropdownOpen = false;
+    private bool isDarkMode = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user?.Identity?.IsAuthenticated == true)
+            {
+                // Try to get actual name from various claims
+                var givenName = user.FindFirst("given_name")?.Value ?? user.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value;
+                var familyName = user.FindFirst("family_name")?.Value ?? user.FindFirst(System.Security.Claims.ClaimTypes.Surname)?.Value;
+                var fullName = user.FindFirst("name")?.Value;
+
+                // Build display name
+                if (!string.IsNullOrEmpty(givenName) && !string.IsNullOrEmpty(familyName))
+                {
+                    displayName = $"{givenName} {familyName}";
+                }
+                else if (!string.IsNullOrEmpty(fullName))
+                {
+                    displayName = fullName;
+                }
+                else if (!string.IsNullOrEmpty(user.Identity.Name))
+                {
+                    // If Identity.Name is an email, extract the name part
+                    var identityName = user.Identity.Name;
+                    if (identityName.Contains('@'))
+                    {
+                        displayName = FormatNameFromEmail(identityName);
+                    }
+                    else
+                    {
+                        displayName = identityName;
+                    }
+                }
+
+                // Get email
+                userEmail = user.FindFirst("email")?.Value ??
+                           user.FindFirst("preferred_username")?.Value ??
+                           user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ??
+                           user.Identity.Name ??
+                           "user@example.com";
+            }
+        }
+        catch
+        {
+            // Use defaults if auth fails
+        }
+    }
+
+    private string FormatNameFromEmail(string email)
+    {
+        // Extract name from email (e.g., "john.smith@company.com" -> "John Smith")
+        var namePart = email.Split('@')[0];
+        var parts = namePart.Split(new[] { '.', '_', '-' }, StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(" ", parts.Select(p => char.ToUpper(p[0]) + p.Substring(1).ToLower()));
+    }
+
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "U";
+
+        // If it's an email, extract initials from name part
+        if (name.Contains('@'))
+        {
+            name = FormatNameFromEmail(name);
+        }
+
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+            return $"{parts[0][0]}{parts[^1][0]}".ToUpper();
+        return name[0].ToString().ToUpper();
+    }
+
+    private void ToggleDropdown() => isDropdownOpen = !isDropdownOpen;
+    private void CloseDropdown() => isDropdownOpen = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Initialize theme from saved preference
+            isDarkMode = await JSRuntime.InvokeAsync<bool>("ThemeManager.get");
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        isDarkMode = await JSRuntime.InvokeAsync<bool>("ThemeManager.toggle");
+    }
+
+    public void Dispose() { }
+}
+
+<style>
+    /* Dropdown Overlay */
+    .dropdown-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1000;
+    }
+
+    .dropdown-menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        width: 280px;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+        z-index: 1001;
+        animation: dropdownSlide 0.2s ease;
+    }
+
+    @@keyframes dropdownSlide {
+        from {
+            opacity: 0;
+            transform: translateY(-8px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .dropdown-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 1rem;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border-radius: 12px 12px 0 0;
+    }
+
+    .dropdown-avatar {
+        width: 48px;
+        height: 48px;
+        background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 1rem;
+    }
+
+    .dropdown-user-details {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .dropdown-user-name {
+        font-size: 0.9375rem;
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    .dropdown-user-email {
+        font-size: 0.8125rem;
+        color: #64748b;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .dropdown-divider {
+        height: 1px;
+        background: #e2e8f0;
+        margin: 0;
+    }
+
+    .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        color: #475569;
+        text-decoration: none;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: all 0.15s ease;
+        cursor: pointer;
+    }
+
+        .dropdown-item:hover {
+            background: #f8fafc;
+            color: #F59E0B;
+        }
+
+    .dropdown-item-danger:hover {
+        background: #fef2f2;
+        color: #ef4444;
+    }
+</style>

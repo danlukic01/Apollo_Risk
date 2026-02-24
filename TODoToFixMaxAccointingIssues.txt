@@ -1,0 +1,753 @@
+-- ============================================================================
+-- CHATBOT GLOSSARY v5: Financial Analytics → SQL Mapping
+-- ============================================================================
+-- DATABASE: ApolloCare_DW
+-- ============================================================================
+-- PRIMARY VIEW: rpt.vw_FacilityAnalyticsByChart
+-- SUPPLEMENTARY VIEWS:
+--   rpt.vw_FacilityScorecard             (facility overview & health score)
+--   rpt.vw_MonthOverMonth_Comparison     (MoM trends)
+--   rpt.vw_YearOverYear_Comparison       (YoY trends)
+--   rpt.vw_TrendIndicators              (moving averages & momentum)
+--   rpt.vw_AgencyCosts_Trend            (agency cost MoM)
+--   rpt.vw_KpiAggregate                 (labour KPIs & benchmarks)
+-- ============================================================================
+-- This replaces all previous glossary versions (v1–v4).
+-- Date: 2026-02-10
+-- ============================================================================
+-- RETIRED VIEWS (DO NOT USE):
+--   rpt.vw_EBITDARContributions — Missing ~50 expense accounts. Produces
+--   materially inflated EBITDAR figures (~$1.5M per facility overstated).
+-- ============================================================================
+
+
+-- ============================================================================
+-- SECTION 1: PRIMARY VIEW — COLUMN REFERENCE
+-- ============================================================================
+/*
+rpt.vw_FacilityAnalyticsByChart columns:
+
+  DIMENSIONS (filter/group by these):
+    FacilityId            INT         -- Facility identifier
+    FacilityName          NVARCHAR    -- e.g. 'Charingfield', 'Yaralla Place'
+    Year                  INT         -- e.g. 2025
+    Month                 INT         -- e.g. 12
+    AnalyticsChartId      INT         -- Chart identifier (internal use)
+    ChartName             NVARCHAR    -- e.g. 'Operating EBITDAR' (see Section 2)
+    GroupingSetId         INT         -- Grouping identifier (internal use)
+    GroupingSetName       NVARCHAR    -- e.g. 'Accounting' (see Section 3)
+    AccountId             INT         -- GL account identifier
+    AccountName           NVARCHAR    -- Individual GL account name
+
+  ACTUAL VALUES:
+    ActualValue                    DECIMAL  -- Monthly total ($)
+    ActualPerDay                   DECIMAL  -- Per calendar day
+    ActualPerBedDay                DECIMAL  -- Per occupied bed day
+    ActualPerBedDayPerAnnum        DECIMAL  -- Per bed day, annualised (×365.25)
+
+  BUDGET VALUES:
+    BudgetValue                    DECIMAL  -- Monthly budget total ($)
+    BudgetPerDay                   DECIMAL  -- Budget per calendar day
+    BudgetPerBedDay                DECIMAL  -- Budget per occupied bed day
+    BudgetPerBedDayPerAnnum        DECIMAL  -- Budget per bed day, annualised
+
+  OCCUPANCY:
+    OccupiedBedDays                DECIMAL  -- Actual occupied bed days in month
+    DaysInMonth                    INT      -- Calendar days in month
+*/
+
+
+-- ============================================================================
+-- SECTION 2: ANALYTICS CHART OPTIONS (Metric Types)
+-- ============================================================================
+/*
+When the user asks about a financial metric, map to ChartName:
+
+  User says                    →  ChartName filter
+  ─────────────────────────────────────────────────────────────────────
+  'Operating EBITDAR'          →  ChartName = 'Operating EBITDAR'
+                                  Core operating performance before D&A and Rent.
+                                  ~120 accounts (Accounting), ~116 accounts (Operational).
+                                  EXCLUDES non-operating items like imputed interest,
+                                  bank interest, investment interest, insurance
+                                  recoveries, capital grants, fundraising, rental
+                                  income, donations. Excludes 'Provider' category.
+
+  'EBITDAR'                    →  ChartName = 'EBITDAR'
+                                  Full EBITDAR including non-operating items.
+                                  ~124 accounts (Accounting), ~120 accounts (Operational).
+
+  'Operating EBITDA'           →  ChartName = 'Operating EBITDA'
+                                  Operating performance before D&A (rent INCLUDED).
+                                  ~121 accounts (Accounting), ~117 accounts (Operational).
+                                  This is the PACE management reporting chart (ChartId=10).
+
+  'Operating EBITDA (ACFA)'    →  ChartName = 'Operating EBITDA (ACFA)'
+  'ACFA' / 'QFR'                  ACFA/QFR regulatory reporting format.
+                                  ~118 accounts (Accounting), ~114 accounts (Operational).
+                                  Only use when user specifically asks for ACFA/QFR format.
+
+  'EBITDA'                     →  ChartName = 'EBITDA'
+                                  Full EBITDA (rent INCLUDED, D&A excluded).
+                                  ~125 accounts (Accounting), ~121 accounts (Operational).
+
+  'Net Profit'                 →  ChartName = 'Net Profit (-Loss) After Imputed Rent'
+  'Net Profit/Loss'               Full P&L bottom line.
+  'Bottom line'                    ~132 accounts (Accounting), ~128 accounts (Operational).
+                                   Includes D&A, rent, interest, tax.
+
+  'Operating Result'           →  ChartName = 'Operating Result'
+                                  Operating surplus/deficit.
+                                  ~121 accounts (Accounting), ~114 accounts (Operational).
+
+  DEFAULT if not specified     →  ChartName = 'Operating EBITDAR'
+                                  (Most common management reporting metric)
+
+CHART HIERARCHY (narrowest → broadest, by number of accounts):
+  Operating EBITDAR (120) → EBITDAR (124) → EBITDA (125) →
+  Net Profit (132) → Operating EBITDA (121, adds rent accounts) →
+  Operating Result (121)
+
+VERIFIED TOTALS (Charingfield, Dec 2025, Accounting, PBDPA):
+  Operating EBITDAR     $20,728.84
+  EBITDAR               $20,872.10
+  Operating Result      $15,403.17
+  Operating EBITDA       $7,398.22
+  EBITDA                 $7,541.48
+  Net Profit            -$1,760.17
+*/
+
+
+-- ============================================================================
+-- SECTION 3: GROUPING METHOD (How to display the breakdown)
+-- ============================================================================
+/*
+When the user specifies a grouping/display method:
+
+  User says                    →  GroupingSetName filter
+  ─────────────────────────────────────────────────────────────────────
+  'Accounting method'          →  GroupingSetName = 'Accounting'
+  'by account'                    PACE's statutory P&L reporting method.
+  'account level detail'          Shows individual GL account rows.
+  'statutory' / 'P&L'            This is the traditional P&L view.
+
+  'Operational method'         →  GroupingSetName = 'Operational'
+  'by area of activity'           Economic reporting method for operational purposes.
+  'by area' / 'management'        Groups accounts into: Direct Care, Everyday Living,
+                                  Accommodation, Administration, Provider.
+
+  DEFAULT if not specified     →  GroupingSetName = 'Accounting'
+
+  IMPORTANT — ACCOUNTING vs OPERATIONAL PRODUCE DIFFERENT TOTALS:
+  This is BY DESIGN. The Operational grouping applies different revenue
+  treatment to provide a more consistent monthly picture:
+
+  1. OPERATIONAL ADDS Imputed Interest (internal) — an accommodation
+     revenue adjustment for RAD holdings. Included in Accommodation
+     revenue and total revenue.
+
+  2. OPERATIONAL REMOVES 5 care subsidy adjustment accounts and replaces
+     them with PRODA Medicare Direct Care Subsidy data (care subsidy
+     payments before means-tested deductions or prior period adjustments):
+       - Permanent Care Subsidies (689)
+       - Means-Tested Care Fees (681)
+       - Income and Means Tested Reduction (692)
+       - Respite Care Subsidies (691)
+       - ANACC Prior Period Adjustments - Perm (688)
+       Plus: ANACC Prior Period Adjustment - Respite, Interim Care
+       Subsidies, 24/7 Nursing Supplement
+
+  Result: For Operating EBITDAR Charingfield Dec 2025:
+    Accounting  =  $20,728.84 PBDPA
+    Operational = -$61,167.16 PBDPA (includes Imputed Interest,
+                   excludes care subsidy adjustments)
+
+  These are TWO VALID VIEWS of the same facility. Accounting matches
+  the statutory P&L; Operational provides a management economics view.
+*/
+
+
+-- ============================================================================
+-- SECTION 4: UNITS (Normalisation)
+-- ============================================================================
+/*
+When the user asks for a specific unit of measure:
+
+  User says                    →  Column to SUM/display
+  ─────────────────────────────────────────────────────────────────────
+  'Per month' / 'monthly'      →  ActualValue (or BudgetValue)
+  'total' / 'dollars'             Raw monthly dollar amounts.
+
+  'Per day'                    →  ActualPerDay (or BudgetPerDay)
+                                  = ActualValue / DaysInMonth
+
+  'Per bed day'                →  ActualPerBedDay (or BudgetPerBedDay)
+  'PBD'                           = ActualValue / OccupiedBedDays
+
+  'Per bed day per annum'      →  ActualPerBedDayPerAnnum (or BudgetPerBedDayPerAnnum)
+  'PBDPA' / 'annualised'         = ActualPerBedDay × 365.25
+
+  DEFAULT if not specified     →  ActualPerBedDayPerAnnum
+                                  (This is the standard management reporting unit)
+*/
+
+
+-- ============================================================================
+-- SECTION 5: FINANCIAL COMPARISONS
+-- ============================================================================
+/*
+  'Actual' / 'actuals'         →  Use Actual* columns
+  'Budget'                     →  Use Budget* columns
+  'Variance'                   →  Calculate: Actual* - Budget*
+                                  Positive variance = favourable (actual > budget
+                                  for revenue, or actual < budget for expenses)
+  'Variance %'                 →  Calculate: (Actual* - Budget*) / ABS(Budget*) × 100
+
+  SIGN CONVENTION:
+    Revenue accounts have POSITIVE values.
+    Expense accounts have NEGATIVE values.
+    SUM() across all accounts gives the net result directly.
+
+  ACCOUNT TYPE FILTERING:
+    If user asks "show me only revenue" → WHERE ActualValue > 0
+    If user asks "show me only expenses" → WHERE ActualValue < 0
+    If user asks "biggest expenses"     → WHERE ActualValue < 0
+                                           ORDER BY ActualValue ASC (most negative first)
+    If user asks "biggest revenue"      → WHERE ActualValue > 0
+                                           ORDER BY ActualValue DESC
+*/
+
+
+-- ============================================================================
+-- SECTION 6: SCOPE (Facilities)
+-- ============================================================================
+/*
+  Specific facility            →  WHERE FacilityName = '<facility_name>'
+
+  Facility names in the system (14 facilities):
+    Alexandra Gardens, Bundaleer, Charingfield, Eloura,
+    Groundwater Lodge, Haddington, Harden Grange, Millrace,
+    Nanyima, Resthaven, The Bays, Vincent Court,
+    Yackandandah, Yaralla Place
+
+  'All facilities' / 'portfolio' / 'All Apollo'
+                               →  No FacilityName filter (returns all 14 facilities)
+                                  GROUP BY FacilityName for comparison table.
+
+  'Best performing'            →  ORDER BY SUM(Actual*) DESC LIMIT n
+  'Worst performing'           →  ORDER BY SUM(Actual*) ASC LIMIT n
+*/
+
+
+-- ============================================================================
+-- SECTION 7: FACILITY SCORECARD (Quick Overview)
+-- ============================================================================
+/*
+USE rpt.vw_FacilityScorecard when the user asks "How is [facility] doing?"
+or wants a quick summary. Returns ONE ROW per facility per month with:
+
+  Filter by: FacilityName, Year, Month, RecordType
+  RecordType: 'Individual' (single facility) or 'Aggregate' (All Apollo)
+
+  OCCUPANCY:
+    OccupancyActualPercent       -- Actual %
+    OccupancyTarget              -- Target % (96%)
+    OccupancyVariance            -- Actual - Target
+    OccupancyStatus              -- 'On Target' / 'Near Target' / 'Below Target'
+
+  LABOUR:
+    LabourCostRatio              -- Labour costs as % of revenue
+    LabourCostBenchmark          -- Benchmark (65%)
+    LabourKpiVariance            -- Ratio - Benchmark (negative = better)
+    LabourKpiStatus              -- 'On Target' / 'Slightly Over' / 'Over Benchmark'
+    LabourCostsMonthly           -- Total labour $ for month
+    TotalRevenue                 -- Total revenue $ for month
+
+  BUDGET:
+    AccountsOverBudget           -- Count of accounts exceeding budget
+    TotalOverspendDollars        -- Estimated total overspend $
+    BudgetStatus                 -- 'On Budget' / 'Minor Overages' / 'Over Budget'
+
+  EBITDAR:
+    TotalEBITDAR                 -- Monthly EBITDAR $ (from analytics view)
+    EBITDARPerBedDay             -- EBITDAR per occupied bed day
+
+  AGENCY:
+    TotalAgencyCosts             -- Agency staff costs $
+    AgencyAsPercentOfLabour      -- Agency as % of total labour
+    AgencyStatus                 -- 'No Agency' / 'Low' / 'Moderate' / 'High'
+
+  HEALTH SCORE:
+    OverallHealthScore           -- 0-100 composite score
+    OverallHealthStatus          -- 'Excellent' (≥80) / 'Good' (60-79) /
+                                    'Needs Attention' (40-59) / 'Critical' (<40)
+
+  Health Score Weights:
+    Occupancy:    30 pts (≥target=30, -5%=20, -10%=10)
+    Labour KPI:   30 pts (≤65%=30, ≤70%=20, ≤75%=10)
+    Budget:       20 pts (0 over=20, ≤2=15, ≤5=10)
+    Agency:       20 pts (none=20, <5%=15, <10%=10)
+    NOTE: EBITDAR is NOT a health score component.
+
+  VERIFIED: Charingfield Dec 2025:
+    TotalEBITDAR = $101,501.55  HealthScore = 95  Status = Excellent
+*/
+
+
+-- ============================================================================
+-- SECTION 8: PRIOR PERIOD COMPARISONS
+-- ============================================================================
+/*
+USE THESE VIEWS when the user asks about trends, changes, or comparisons
+over time. Pre-calculated change amounts, percentages, and trend labels.
+
+────────────────────────────────────────────────────────────────────────
+VIEW 1: rpt.vw_MonthOverMonth_Comparison
+────────────────────────────────────────────────────────────────────────
+Use when: "How did we do vs last month?", "MoM change", "monthly trend"
+Source: rpt.vw_FacilityScorecard (current and prior month)
+
+  Filter by: FacilityName, CurrentYear, CurrentMonth, RecordType
+
+  Available metrics (each has Current, Prior, Change, Trend columns):
+    Occupancy        → CurrentOccupancy, PriorOccupancy,
+                       OccupancyMoMChange, OccupancyMoMTrend
+    Labour KPI       → CurrentLabourKpi, PriorLabourKpi,
+                       LabourKpiMoMChange, LabourKpiMoMTrend
+    Revenue          → CurrentRevenue, PriorRevenue,
+                       RevenueMoMChange, RevenueMoMChangePercent
+    Agency Costs     → CurrentAgencyCosts, PriorAgencyCosts,
+                       AgencyCostsMoMChange, AgencyCostsMoMTrend
+    EBITDAR          → CurrentEBITDAR, PriorEBITDAR,
+                       EBITDARMoMChange, EBITDARMoMTrend
+    Accounts Over    → CurrentAccountsOverBudget, PriorAccountsOverBudget,
+      Budget            BudgetMoMChange
+    Health Score     → CurrentHealthScore, PriorHealthScore,
+                       HealthScoreMoMChange
+    Overall          → OverallTrend ('Improving'/'Declining'/'Stable')
+
+  Trend Thresholds:
+    Occupancy:  ±0.5% | Labour KPI: ±0.5% (reversed) |
+    Agency: ±$1,000 (reversed) | EBITDAR: ±$5,000
+
+  Overall Trend uses "2-of-3" methodology:
+    If 2+ of (Occupancy, Labour, EBITDAR) improving → Overall Improving
+    If 2+ declining → Overall Declining | Otherwise → Stable
+
+────────────────────────────────────────────────────────────────────────
+VIEW 2: rpt.vw_YearOverYear_Comparison
+────────────────────────────────────────────────────────────────────────
+Use when: "How did we do vs last year?", "YoY change", "year over year"
+
+  Filter by: FacilityName, CurrentYear, CurrentMonth, RecordType
+
+  Same metrics as MoM but comparing to same month in prior year:
+    Occupancy        → OccupancyYoYChange, OccupancyYoYChangePercent,
+                       OccupancyYoYTrend
+    Revenue          → RevenueYoYChange, RevenueYoYChangePercent
+    EBITDAR          → EBITDARYoYChange, EBITDARYoYChangePercent,
+                       EBITDARYoYTrend
+    Overall          → OverallYoYTrend
+
+────────────────────────────────────────────────────────────────────────
+VIEW 3: rpt.vw_TrendIndicators
+────────────────────────────────────────────────────────────────────────
+Use when: "What's the trend?", "momentum", "moving average", "trajectory"
+
+  Filter by: FacilityName, Year, Month, RecordType
+
+  Moving averages:
+    Revenue          → Revenue_3MonthMA, Revenue_6MonthMA,
+                       Revenue_TrendSignal, Revenue_Momentum
+    EBITDAR          → EBITDAR_3MonthMA, EBITDAR_6MonthMA,
+                       EBITDAR_TrendSignal, EBITDAR_Momentum
+    Health Score     → HealthScore_3MonthMA, HealthScore_6MonthMA
+    Overall          → OverallTrendAssessment
+
+  Signals: 'Bullish' / 'Neutral' / 'Bearish'
+  Momentum: 'Accelerating' / 'Stable' / 'Decelerating'
+
+────────────────────────────────────────────────────────────────────────
+VIEW 4: rpt.vw_AgencyCosts_Trend
+────────────────────────────────────────────────────────────────────────
+Use when: "How are agency costs trending?", "agency cost changes"
+
+  Filter by: FacilityName, Year, Month
+  Columns: AccountDescription, ActualCost, PriorMonthCost,
+           TrendAmount, TrendPercent, TrendDirection
+
+────────────────────────────────────────────────────────────────────────
+ACCOUNT-LEVEL PRIOR PERIOD (using primary view self-join)
+────────────────────────────────────────────────────────────────────────
+For detailed account-level YoY or MoM comparison:
+*/
+
+-- YoY comparison by account:
+SELECT
+    curr.AccountName,
+    SUM(curr.ActualPerBedDayPerAnnum) AS Current_PBDPA,
+    SUM(prev.ActualPerBedDayPerAnnum) AS PriorYear_PBDPA,
+    SUM(curr.ActualPerBedDayPerAnnum) - SUM(prev.ActualPerBedDayPerAnnum) AS YoY_Change
+FROM rpt.vw_FacilityAnalyticsByChart curr
+LEFT JOIN rpt.vw_FacilityAnalyticsByChart prev
+    ON curr.FacilityName = prev.FacilityName
+   AND curr.AccountName = prev.AccountName
+   AND curr.ChartName = prev.ChartName
+   AND curr.GroupingSetName = prev.GroupingSetName
+   AND prev.Year = curr.Year - 1
+   AND prev.Month = curr.Month
+WHERE curr.FacilityName = 'Charingfield'
+  AND curr.Year = 2025 AND curr.Month = 12
+  AND curr.ChartName = 'Operating EBITDAR'
+  AND curr.GroupingSetName = 'Accounting'
+GROUP BY curr.AccountName
+ORDER BY ABS(SUM(curr.ActualPerBedDayPerAnnum) - SUM(prev.ActualPerBedDayPerAnnum)) DESC;
+
+
+-- ============================================================================
+-- SECTION 9: LABOUR KPI BENCHMARKS
+-- ============================================================================
+/*
+USE rpt.vw_KpiAggregate when the user asks about labour KPIs, labour
+ratios, benchmarks, staffing efficiency, or agency costs as a KPI.
+
+  Filter by: FacilityName, Year, Month, KpiName, IsBudget
+
+  Key Columns:
+    KpiValue                      -- The calculated ratio (e.g. 85.0 = 85.0%)
+    Benchmark                     -- Target benchmark value
+    Difference                    -- KpiValue - Benchmark
+    IsWorse                       -- 1 if performing worse than benchmark
+    LabourCostPerBedDayPerAnnum   -- Labour costs PBDPA
+    RevenuePerBedDayPerAnnum      -- Revenue PBDPA
+    RecordType                    -- 'Individual' or 'Aggregate'
+
+  KPI NAME MAPPING:
+
+  User says                      →  KpiName filter       Benchmark
+  ──────────────────────────────────────────────────────────────────
+  'Direct care labour ratio'     →  'Direct Care'        75%
+  'Everyday living labour ratio' →  'Everyday Living'    75%
+  'Admin labour ratio'           →  'Administration'     12%
+  'Accommodation labour ratio'   →  'Accommodation'      34%
+  'Agency ratio'                 →  'Agency'              5%
+
+  WHAT THE RATIO MEANS:
+    KpiValue = (Labour Costs / Revenue) × 100
+    e.g. KpiValue=85.0 with Benchmark=75 means labour costs are
+    85.0% of revenue vs a target of 75%. Difference=10.0.
+
+  VERIFIED: Charingfield Dec 2025:
+    Direct Care:    85.0% (Benchmark 75%) — IsWorse=0
+    Everyday Living: 64.0% (Benchmark 75%) — within target
+    Administration: 10.3% (Benchmark 12%) — within target
+    Accommodation:  10.6% (Benchmark 34%) — within target
+    Agency:          0.0% (Benchmark  5%) — no agency usage
+*/
+
+-- EXAMPLE: All KPIs for a facility
+SELECT
+    FacilityName, KpiName,
+    KpiValue AS LabourRatio_Pct,
+    Benchmark AS Target_Pct,
+    Difference, IsWorse
+FROM rpt.vw_KpiAggregate
+WHERE FacilityName = 'Charingfield'
+  AND Year = 2025 AND Month = 12
+  AND IsBudget = 0
+  AND RecordType = 'Individual'
+ORDER BY KpiName;
+
+
+-- ============================================================================
+-- SECTION 10: DATA COVERAGE & AVAILABILITY
+-- ============================================================================
+/*
+  DATABASE:   ApolloCare_DW
+  DATE RANGE: Jan 2023 – Jan 2026 (37 months and growing)
+  FACILITIES: 7 facilities from Jan 2023, scaling to 14 by Sep 2025
+
+  BUDGET DATA:  Budget values are $0.00 for Jan–Jun 2023.
+                Budget = Actual for Jul–Dec 2024 (likely placeholder).
+                Distinct budget values available from Jan 2025 onwards.
+
+  PRIOR PERIOD: YoY comparison available from Jan 2024 onwards.
+                MoM comparison available from Feb 2023 onwards.
+
+  VERIFIED EBITDAR (Dec 2025, all facilities, monthly $):
+    Yaralla Place        $178,974
+    Groundwater Lodge    $131,976
+    Alexandra Gardens    $112,016
+    Charingfield         $101,502
+    Harden Grange         $58,003
+    Nanyima               $57,539
+    Vincent Court         $25,794
+    Bundaleer             $13,148
+    Haddington           -$13,317
+    Resthaven            -$23,750
+    Millrace             -$39,718
+    Yackandandah         -$48,447
+    Eloura              -$155,217
+    The Bays            -$231,387
+*/
+
+
+-- ============================================================================
+-- SECTION 11: EXAMPLE QUERIES
+-- ============================================================================
+
+-- EXAMPLE 1: "What is Charingfield's operating EBITDAR PBDPA Dec 2025?"
+SELECT
+    FacilityName, Year, Month,
+    SUM(ActualPerBedDayPerAnnum) AS OperatingEBITDAR_PBDPA
+FROM rpt.vw_FacilityAnalyticsByChart
+WHERE FacilityName = 'Charingfield'
+  AND Year = 2025 AND Month = 12
+  AND ChartName = 'Operating EBITDAR'
+  AND GroupingSetName = 'Accounting'
+GROUP BY FacilityName, Year, Month;
+-- Expected: $20,728.84
+
+
+-- EXAMPLE 2: "Compare all facilities by EBITDAR in December 2025"
+SELECT
+    FacilityName,
+    SUM(ActualValue) AS MonthlyTotal,
+    SUM(ActualPerBedDayPerAnnum) AS PBDPA
+FROM rpt.vw_FacilityAnalyticsByChart
+WHERE Year = 2025 AND Month = 12
+  AND ChartName = 'EBITDAR'
+  AND GroupingSetName = 'Accounting'
+GROUP BY FacilityName
+ORDER BY SUM(ActualPerBedDayPerAnnum) DESC;
+
+
+-- EXAMPLE 3: "Show me the budget variance for Charingfield"
+SELECT
+    AccountName,
+    ActualPerBedDayPerAnnum   AS Actual_PBDPA,
+    BudgetPerBedDayPerAnnum   AS Budget_PBDPA,
+    ActualPerBedDayPerAnnum - BudgetPerBedDayPerAnnum AS Variance_PBDPA
+FROM rpt.vw_FacilityAnalyticsByChart
+WHERE FacilityName = 'Charingfield'
+  AND Year = 2025 AND Month = 12
+  AND ChartName = 'Operating EBITDAR'
+  AND GroupingSetName = 'Accounting'
+ORDER BY ABS(ActualPerBedDayPerAnnum - BudgetPerBedDayPerAnnum) DESC;
+
+
+-- EXAMPLE 4: "What are the biggest revenue items?"
+SELECT
+    AccountName,
+    ActualValue AS Monthly,
+    ActualPerBedDayPerAnnum AS PBDPA
+FROM rpt.vw_FacilityAnalyticsByChart
+WHERE FacilityName = 'Charingfield'
+  AND Year = 2025 AND Month = 12
+  AND ChartName = 'Operating EBITDAR'
+  AND GroupingSetName = 'Accounting'
+  AND ActualValue > 0
+ORDER BY ActualValue DESC;
+
+
+-- EXAMPLE 5: "What are the biggest expenses?"
+SELECT
+    AccountName,
+    ActualValue AS Monthly,
+    ActualPerBedDayPerAnnum AS PBDPA
+FROM rpt.vw_FacilityAnalyticsByChart
+WHERE FacilityName = 'Charingfield'
+  AND Year = 2025 AND Month = 12
+  AND ChartName = 'Operating EBITDAR'
+  AND GroupingSetName = 'Accounting'
+  AND ActualValue < 0
+ORDER BY ActualValue ASC;
+
+
+-- EXAMPLE 6: "How did Charingfield do month over month?"
+SELECT
+    FacilityName, CurrentYear, CurrentMonth,
+    CurrentEBITDAR, PriorEBITDAR, EBITDARMoMChange, EBITDARMoMTrend,
+    CurrentOccupancy, OccupancyMoMTrend,
+    OverallTrend
+FROM rpt.vw_MonthOverMonth_Comparison
+WHERE FacilityName = 'Charingfield'
+  AND CurrentYear = 2025 AND CurrentMonth = 12;
+
+
+-- EXAMPLE 7: "Compare Charingfield this December vs last December"
+SELECT
+    FacilityName, CurrentYear, CurrentMonth,
+    CurrentEBITDAR, PriorYearEBITDAR,
+    EBITDARYoYChange, EBITDARYoYChangePercent, EBITDARYoYTrend
+FROM rpt.vw_YearOverYear_Comparison
+WHERE FacilityName = 'Charingfield'
+  AND CurrentYear = 2025 AND CurrentMonth = 12;
+
+
+-- EXAMPLE 8: "What's the revenue trend for Charingfield?"
+SELECT
+    FacilityName, Year, Month,
+    Revenue_3MonthMA, Revenue_6MonthMA,
+    Revenue_TrendSignal, Revenue_Momentum,
+    OverallTrendAssessment
+FROM rpt.vw_TrendIndicators
+WHERE FacilityName = 'Charingfield'
+  AND Year = 2025 AND Month = 12;
+
+
+-- EXAMPLE 9: "How is Charingfield doing overall?"
+SELECT
+    FacilityName,
+    OccupancyActualPercent, OccupancyStatus,
+    LabourCostRatio, LabourKpiStatus,
+    TotalEBITDAR, EBITDARPerBedDay,
+    AccountsOverBudget, BudgetStatus,
+    AgencyStatus,
+    OverallHealthScore, OverallHealthStatus
+FROM rpt.vw_FacilityScorecard
+WHERE FacilityName = 'Charingfield'
+  AND Year = 2025 AND Month = 12
+  AND RecordType = 'Individual';
+
+
+-- EXAMPLE 10: "Which facilities are worst on agency costs?"
+SELECT
+    FacilityName, KpiName,
+    KpiValue AS AgencyRatio_Pct,
+    Benchmark AS Target_Pct,
+    Difference
+FROM rpt.vw_KpiAggregate
+WHERE Year = 2025 AND Month = 12
+  AND KpiName = 'Agency'
+  AND IsBudget = 0
+  AND RecordType = 'Individual'
+ORDER BY KpiValue DESC;
+
+
+-- EXAMPLE 11: "Which facilities need attention?"
+SELECT
+    FacilityName,
+    OverallHealthScore,
+    OverallHealthStatus,
+    OccupancyStatus,
+    LabourKpiStatus,
+    BudgetStatus,
+    AgencyStatus
+FROM rpt.vw_FacilityScorecard
+WHERE Year = 2025 AND Month = 12
+  AND RecordType = 'Individual'
+  AND OverallHealthStatus IN ('Needs Attention', 'Critical')
+ORDER BY OverallHealthScore ASC;
+
+
+-- ============================================================================
+-- SECTION 12: VIEW SELECTION GUIDE
+-- ============================================================================
+/*
+WHICH VIEW TO USE:
+
+  User question type                        →  View
+  ──────────────────────────────────────────────────────────────────────
+  "How is [facility] doing?"                →  rpt.vw_FacilityScorecard
+  Quick overview / health score / status
+
+  Financial detail (accounts, charts,       →  rpt.vw_FacilityAnalyticsByChart
+    budget variance, revenue/expense)
+
+  Month-over-month summary                  →  rpt.vw_MonthOverMonth_Comparison
+
+  Year-over-year summary                    →  rpt.vw_YearOverYear_Comparison
+
+  Trend / momentum / moving averages        →  rpt.vw_TrendIndicators
+
+  Agency cost trends                        →  rpt.vw_AgencyCosts_Trend
+
+  Labour KPIs / benchmarks /                →  rpt.vw_KpiAggregate
+    labour-to-revenue ratios
+
+  For COMBINED questions (e.g. "What's our EBITDAR trend AND which
+  accounts are driving it?"), use multiple views: TrendIndicators for
+  the headline, then FacilityAnalyticsByChart for account breakdown.
+*/
+
+
+-- ============================================================================
+-- SECTION 13: IMPORTANT NOTES
+-- ============================================================================
+/*
+1. SIGN CONVENTION:
+   Revenue = POSITIVE. Expense = NEGATIVE.
+   SUM() gives net result directly.
+
+2. MANDATORY FILTERS:
+   Every query to vw_FacilityAnalyticsByChart MUST include both:
+     - ChartName (which metric)
+     - GroupingSetName ('Accounting' or 'Operational')
+   Without both, duplicate rows will appear and totals will be doubled.
+
+3. DEFAULTS when user doesn't specify:
+     ChartName       = 'Operating EBITDAR'
+     GroupingSetName  = 'Accounting'
+     Value column     = ActualPerBedDayPerAnnum
+     Comparison       = Actual (not Budget)
+
+4. ACCOUNTING vs OPERATIONAL:
+   These produce DIFFERENT totals by design (see Section 3).
+   Accounting = statutory P&L. Operational = management economics.
+   Do NOT expect them to reconcile.
+
+5. OPERATING EBITDA:
+   Two charts exist:
+     'Operating EBITDA'        — ChartId=10, PACE management (DEFAULT)
+     'Operating EBITDA (ACFA)' — ChartId=9, ACFA/QFR regulatory
+   The chatbot will only return one result for 'Operating EBITDA'.
+
+6. RETIRED VIEW:
+   Do NOT use rpt.vw_EBITDARContributions. It misses ~50 expense
+   accounts, causing EBITDAR to be overstated by ~$1.5M per facility.
+   The FacilityScorecard has been fixed to use the correct source.
+
+7. TREND LABELS:
+   MoM/YoY views: 'Improving' / 'Declining' / 'Stable' / 'No Prior Data'
+   TrendIndicators: 'Bullish' / 'Neutral' / 'Bearish' (signals)
+                    'Accelerating' / 'Stable' / 'Decelerating' (momentum)
+
+8. HEALTH SCORE:
+   Composite 0-100 based on Occupancy (30%), Labour KPI (30%),
+   Budget (20%), Agency (20%). Does NOT include EBITDAR.
+   Six facilities run negative EBITDAR but score 75+ because
+   their occupancy, labour, budget, and agency metrics are healthy.
+*/
+
+
+-- ============================================================================
+-- SECTION 14: FIXES APPLIED (Change Log)
+-- ============================================================================
+/*
+  DATE        FIX                                              IMPACT
+  ──────────────────────────────────────────────────────────────────────
+  2026-02-10  vw_FacilityScorecard: Swapped EBITDAR source     Scorecard,
+              from vw_EBITDARContributions (broken, missing    MoM, YoY,
+              ~50 accounts) to vw_FacilityAnalyticsByChart     Rankings,
+              WHERE ChartName='EBITDAR' AND                    YTD, Trends
+              GroupingSetName='Accounting'.                     all corrected.
+              Example: Charingfield $1,621,908 → $101,502.
+
+  2026-02-10  Dim_AnalyticsChart: Renamed ChartKey=6           'Operating
+              (ChartId=9) from 'Operating EBITDA' to           EBITDA' no
+              'Operating EBITDA (ACFA)' to eliminate            longer double-
+              double-counting when filtering by ChartName.     counts.
+              Example: $13,800 → $7,398 PBDPA.
+
+  PENDING     ETL: Verify Dim_AnalyticsChart load doesn't      Rename may
+              overwrite the ACFA rename from staging source.    revert on
+              May need staging rename or post-load step.        next refresh.
+
+  PENDING     BA: Averaging — 105 accounts flagged Averageable  Awaiting BA
+              in staging. Portal applies rolling average.       input on
+              Flag not in DW. Need period & method.             period/method.
+
+  PENDING     BA: Benchmark — Labour KPI benchmarks exist.      Awaiting BA
+              Financial benchmarks (EBITDAR/EBITDA) do not.     confirmation.
+*/
