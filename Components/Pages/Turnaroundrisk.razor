@@ -741,14 +741,6 @@
     private bool isOverrideMode = false;
     private string? overrideReason = null;
     private string? autoCalculatedRAG = null;
-    private string? editingRatingType = null;
-
-
-    private class ThresholdScoreBandOption
-    {
-        public decimal Value { get; set; }
-        public string Label { get; set; } = "";
-    }
 
 
     private class ThresholdScoreBandOption
@@ -768,23 +760,6 @@
     private List<RiskCategoryDto> createRiskCategories = new();
     private string createRiskServiceName = "";
     private string createRiskFacilityName = "";
-    private string? newRiskRatingType = null;
-
-    private static readonly List<ThresholdScoreBandOption> thresholdScoreBands = new()
-    {
-        new() { Value = 1m, Label = "Low" },
-        new() { Value = 2m, Label = "Medium" },
-        new() { Value = 3m, Label = "High" },
-        new() { Value = 4m, Label = "Extreme" }
-    };
-
-    private decimal? selectedThresholdBandValue;
-    private decimal? selectedNewRiskThresholdBandValue;
-
-    private bool IsEditingThresholdScaleMode => IsThresholdBandRatingType(editingRatingType);
-
-    private bool IsNewRiskThresholdScaleMode => IsThresholdBandRatingType(newRiskRatingType);
-
 
     private static readonly List<ThresholdScoreBandOption> thresholdScoreBands = new()
     {
@@ -1342,7 +1317,6 @@
         saveError = null;
         editingThreshold = null;
         currentRAGRating = null;
-        editingRatingType = null;
 
         // Initialize scoreRequest first with basic info
         scoreRequest = new AddRiskScoreRequest
@@ -1421,7 +1395,6 @@
                 editingMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
                 editingThreshold = null;
                 currentRAGRating = null;
-                editingRatingType = null;
                 scoreRequest = new AddRiskScoreRequest();
                 StateHasChanged();
                 return;
@@ -1450,7 +1423,6 @@
         saveError = null;
         editingThreshold = null;
         currentRAGRating = null;
-        editingRatingType = null;
 
         // Initialize scoreRequest first with basic info
         scoreRequest = new AddRiskScoreRequest
@@ -1497,11 +1469,6 @@
                 );
 
                 editingThreshold = thresholds.FirstOrDefault();
-                if (!string.IsNullOrWhiteSpace(editingThreshold?.RatingType))
-                {
-                    editingRatingType = editingThreshold.RatingType;
-                    scoreRequest.RatingType = editingThreshold.RatingType;
-                }
 
                 // Get current score for this month
                 var scores = await RiskService.GetTRRiskScoresAsync(trRiskId);
@@ -1636,7 +1603,6 @@
         autoCalculatedRAG = null;
         editingThreshold = null;
         currentRAGRating = null;
-        editingRatingType = null;
         StateHasChanged();
     }
 
@@ -1698,7 +1664,6 @@
                 isOverrideMode = false;
                 overrideReason = null;
                 autoCalculatedRAG = null;
-                editingRatingType = null;
 
                 // Reload data
                 await LoadData();
@@ -1734,7 +1699,6 @@
         newRiskCalculatedRAG = null;
         selectedNewRiskThresholdBandValue = null;
         newRiskThreshold = null;
-        newRiskRatingType = null;
 
         createRiskServiceName = serviceName;
         createRiskFacilityName = siteName;
@@ -1770,7 +1734,6 @@
         newRiskCalculatedRAG = null;
         selectedNewRiskThresholdBandValue = null;
         newRiskThreshold = null;
-        newRiskRatingType = null;
 
         createRiskServiceName = ""; // User will select
         createRiskFacilityName = siteName;
@@ -1856,11 +1819,6 @@
                 serviceId: newRiskRequest.ServiceId
             );
             newRiskThreshold = thresholds.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(newRiskThreshold?.RatingType))
-            {
-                newRiskRatingType = newRiskThreshold.RatingType;
-                newRiskRequest.RatingType = newRiskThreshold.RatingType;
-            }
         }
         else
         {
