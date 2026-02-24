@@ -133,7 +133,6 @@ public class TRRiskThresholdDto
     public string? ServiceName { get; set; }
     public decimal GreenMax { get; set; } = 3.9m;
     public decimal AmberMax { get; set; } = 6.9m;
-    public string? RatingType { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime? LastModified { get; set; }
 }
