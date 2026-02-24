@@ -750,6 +750,13 @@
         public string Label { get; set; } = "";
     }
 
+
+    private class ThresholdScoreBandOption
+    {
+        public decimal Value { get; set; }
+        public string Label { get; set; } = "";
+    }
+
     // Create Risk Modal state
     private bool showCreateRiskDialog = false;
     private bool isCreatingRisk = false;
@@ -777,6 +784,24 @@
     private bool IsEditingThresholdScaleMode => IsThresholdBandRatingType(editingRatingType);
 
     private bool IsNewRiskThresholdScaleMode => IsThresholdBandRatingType(newRiskRatingType);
+
+
+    private static readonly List<ThresholdScoreBandOption> thresholdScoreBands = new()
+    {
+        new() { Value = 1m, Label = "Low" },
+        new() { Value = 2m, Label = "Medium" },
+        new() { Value = 3m, Label = "High" },
+        new() { Value = 4m, Label = "Extreme" }
+    };
+
+    private decimal? selectedThresholdBandValue;
+    private decimal? selectedNewRiskThresholdBandValue;
+
+    private bool IsEditingThresholdScaleMode =>
+        NormalizeRatingType(scoreRequest.RatingType) is "threshold" or "threshold_range";
+
+    private bool IsNewRiskThresholdScaleMode =>
+        NormalizeRatingType(newRiskRequest.RatingType) is "threshold" or "threshold_range";
 
 
     private List<SiteDto> sites = new();
@@ -1219,20 +1244,6 @@
         return ratingType?.Trim().ToLowerInvariant() ?? string.Empty;
     }
 
-    private static bool IsThresholdBandRatingType(string? ratingType)
-    {
-        var normalized = NormalizeRatingType(ratingType)
-            .Replace(" ", string.Empty)
-            .Replace("-", string.Empty)
-            .Replace("_", string.Empty);
-
-        return normalized switch
-        {
-            "threshold" or "thresholdrange" or "thresholddropdown" or "band" or "bands" => true,
-            _ => normalized.Contains("threshold") && normalized.Contains("range")
-        };
-    }
-
     private static decimal? GetThresholdBandValue(string? ragRating)
     {
         return NormalizeRagValue(ragRating) switch
@@ -1477,7 +1488,6 @@
                 editingSiteId = risk.SiteId;
                 editingServiceId = risk.ServiceId;
                 scoreRequest.RatingType = risk.RatingType;
-                editingRatingType = risk.RatingType;
 
                 // Get threshold for this risk's category, site, and service
                 var thresholds = await RiskService.GetTRRiskThresholdsAsync(
@@ -1661,7 +1671,6 @@
         try
         {
             scoreRequest.RAGRating = NormalizeRagValue(scoreRequest.RAGRating);
-            scoreRequest.RatingType = editingRatingType ?? scoreRequest.RatingType;
 
             // If in override mode, append the override reason to notes
             if (isOverrideMode && !string.IsNullOrWhiteSpace(overrideReason))
@@ -1802,7 +1811,6 @@
                        ?? allCategories.FirstOrDefault(c => c.Id == newRiskRequest.RiskCategoryId);
 
         newRiskRequest.RatingType = category?.RatingType;
-        newRiskRatingType = category?.RatingType;
     }
 
     private async Task OnCreateRiskServiceChanged()
@@ -1820,7 +1828,6 @@
         // Reset category selection
         newRiskRequest.RiskCategoryId = 0;
         newRiskRequest.RatingType = null;
-        newRiskRatingType = null;
         newRiskThreshold = null;
         newRiskScore = 0;
         selectedNewRiskThresholdBandValue = null;
@@ -1942,7 +1949,7 @@
                         RAGRating = newRiskCalculatedRAG,
                         Score = newRiskScore,
                         EnteredBy = 1, // TODO: Get from auth context
-                        RatingType = newRiskRatingType ?? newRiskRequest.RatingType
+                        RatingType = newRiskRequest.RatingType
                     };
 
                 var scoreResult = await RiskService.AddTRRiskScoreAsync(scoreRequest);
