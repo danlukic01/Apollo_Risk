@@ -784,19 +784,28 @@
         }
     }
 
-    private void OnBenchmarkNumericChanged(decimal value)
+    private void OnBenchmarkNumericChanged(object value)
     {
-        selectedBenchmarkBand = MapToBandValue(value);
+        if (TryConvertToDecimal(value, out var numericValue))
+        {
+            selectedBenchmarkBand = MapToBandValue(numericValue);
+        }
     }
 
-    private void OnGreenNumericChanged(decimal value)
+    private void OnGreenNumericChanged(object value)
     {
-        selectedGreenBand = MapToBandValue(value);
+        if (TryConvertToDecimal(value, out var numericValue))
+        {
+            selectedGreenBand = MapToBandValue(numericValue);
+        }
     }
 
-    private void OnAmberNumericChanged(decimal value)
+    private void OnAmberNumericChanged(object value)
     {
-        selectedAmberBand = MapToBandValue(value);
+        if (TryConvertToDecimal(value, out var numericValue))
+        {
+            selectedAmberBand = MapToBandValue(numericValue);
+        }
     }
 
     private void SyncBandSelections()
