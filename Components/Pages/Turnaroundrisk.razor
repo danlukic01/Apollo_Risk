@@ -7,7 +7,11 @@
 <div class="turnaround-risk-page">
     <div class="page-header">
         <div class="header-icon">
-            <RadzenIcon Icon="grid_view" style="font-size: 28px;" />
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
         </div>
         <div class="header-content">
             <h1>Turnaround Risk</h1>
@@ -22,11 +26,11 @@
                 <button class="tab-btn @(selectedServiceId == null ? "active" : "")" @onclick="@(() => SelectService(null))">
                     All Services
                 </button>
-                @foreach (var service in services)
+                @foreach (var service in services.OrderBy(s => GetServiceSortOrder(s.Name)))
                 {
-                    <button class="tab-btn @(selectedServiceId == service.Id ? "active" : "")" @onclick="@(() => SelectService(service.Id))">
+                        <button class="tab-btn @(selectedServiceId == service.Id ? "active" : "")" @onclick="@(() => SelectService(service.Id))">
                         @service.Name
-                    </button>
+                        </button>
                 }
             </div>
         </div>
@@ -107,46 +111,46 @@
 
     @if (isLoading)
     {
-        <div class="loading-container">
-            <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
-            <span>Loading risk data...</span>
-        </div>
+            <div class="loading-container">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" />
+                <span>Loading risk data...</span>
+            </div>
     }
     else
     {
         @if (allSitesView)
         {
-            <!-- ALL SITES VIEW - Risk Matrix -->
-            <div class="card">
-                <div class="risk-matrix-container">
-                    <table class="risk-matrix">
-                        <thead>
-                            <tr>
-                                <th class="risk-col">Risk</th>
+                    <!-- ALL SITES VIEW - Risk Matrix -->
+                    <div class="card">
+                        <div class="risk-matrix-container">
+                            <table class="risk-matrix">
+                                <thead>
+                                    <tr>
+                                        <th class="risk-col">Risk</th>
                                 @foreach (var site in displaySites)
                                 {
-                                    <th class="site-col" title="@site.Name">@GetFacilityCode(site.Name)</th>
+                                                <th class="site-col" title="@site.Name">@GetFacilityCode(site.Name)</th>
                                 }
-                            </tr>
-                        </thead>
-                        <tbody>
+                                    </tr>
+                                </thead>
+                                <tbody>
                             @if (!matrixData.Any())
                             {
-                                <tr>
-                                    <td colspan="@(displaySites.Count + 1)" class="no-data">No risk data found for the selected filters</td>
-                                </tr>
+                                            <tr>
+                                                <td colspan="@(displaySites.Count + 1)" class="no-data">No risk data found for the selected filters</td>
+                                            </tr>
                             }
                             else
                             {
-                                @foreach (var serviceGroup in matrixData.GroupBy(r => r.ServiceName).OrderBy(g => g.Key))
+                                @foreach (var serviceGroup in matrixData.GroupBy(r => r.ServiceName).OrderBy(g => GetServiceSortOrder(g.Key)))
                                 {
-                                    <tr class="service-header-row">
-                                        <td colspan="@(displaySites.Count + 1)" class="service-header">@serviceGroup.Key</td>
-                                    </tr>
+                                                    <tr class="service-header-row">
+                                                        <td colspan="@(displaySites.Count + 1)" class="service-header">@serviceGroup.Key</td>
+                                                    </tr>
                                     @foreach (var risk in serviceGroup.OrderBy(r => r.RiskName))
                                     {
-                                        <tr class="data-row">
-                                            <td class="risk-name">@risk.RiskName</td>
+                                                            <tr class="data-row">
+                                                                <td class="risk-name">@risk.RiskName</td>
                                             @foreach (var site in displaySites)
                                             {
                                                 var siteRating = risk.SiteRatings.FirstOrDefault(sr => sr.SiteId == site.Id);
@@ -157,627 +161,638 @@
                                                 @if (hasRisk)
                                                 {
                                                     var hasRating = !string.IsNullOrEmpty(ragValue);
-                                                    <td class="rag-cell @ragClass clickable @(!hasRating ? "no-rating" : "")"
-                                                        @onclick="@(async () => await OpenScoreEditor(riskId, risk.RiskName, site.Name))"
-                                                        title="@(hasRating ? "Click to edit score" : "Click to add score")">
+                                                                                <td class="rag-cell @ragClass clickable @(!hasRating ? "no-rating" : "")"
+                                                                                    @onclick="@(async () => await OpenScoreEditor(riskId, risk.RiskName, site.Name))"
+                                                                                    title="@(hasRating ? "Click to edit score" : "Click to add score")">
                                                         @if (showValues && hasRating)
                                                         {
-                                                            <span class="rag-text">@FormatRAGDisplay(ragValue)</span>
+                                                                                            <span class="rag-text">@FormatRAGDisplay(ragValue)</span>
                                                         }
                                                         else if (!hasRating)
                                                         {
-                                                            <span class="add-score-hint">+</span>
+                                                                                            <span class="add-score-hint">+</span>
                                                         }
-                                                    </td>
+                                                                                </td>
                                                 }
                                                 else
                                                 {
-                                                    <td class="rag-cell empty-cell" title="No risk defined for this site">
-                                                        <span class="no-risk-indicator">—</span>
-                                                    </td>
+                                                                                <td class="rag-cell empty-cell" title="No risk defined for this site">
+                                                                                    <span class="no-risk-indicator">—</span>
+                                                                                </td>
                                                 }
                                             }
-                                        </tr>
+                                                            </tr>
                                     }
                                 }
                             }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
         }
         else
         {
-            <!-- SITE DRILL-DOWN VIEW -->
-            <div class="card">
-                <div class="site-drilldown-container">
-                    <table class="site-drilldown">
-                        <thead>
-                            <tr>
-                                <th class="site-col-header">Facility</th>
+                    <!-- SITE DRILL-DOWN VIEW -->
+                    <div class="card">
+                        <div class="site-drilldown-container">
+                            <table class="site-drilldown">
+                                <colgroup>
+                                    <col style="@GetFacilityColStyle()" />
+                            @foreach (var month in periodMonths)
+                            {
+                                            <col />
+                            }
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th class="site-col-header">Facility</th>
                                 @foreach (var month in periodMonths)
                                 {
-                                    <th class="month-col-header">@month.ToString("MMM")</th>
+                                                <th class="month-col-header">@month.ToString("MMM")</th>
                                 }
-                            </tr>
-                        </thead>
-                        <tbody>
+                                    </tr>
+                                </thead>
+                                <tbody>
                             @foreach (var site in displaySites)
                             {
                                 var siteData = drilldownData.FirstOrDefault(d => d.SiteId == site.Id);
                                 var isExpanded = expandedSites.Contains(site.Id);
 
-                                <tr class="site-row @(isExpanded ? "expanded" : "")">
-                                    <td class="site-name-cell">
-                                        <button class="expand-btn" @onclick="@(() => ToggleSiteExpand(site.Id))">
-                                            <span class="expand-icon">@(isExpanded ? "▼" : "▶")</span>
-                                            <span class="site-label">@site.Name</span>
-                                        </button>
-                                    </td>
+                                            <tr class="site-row @(isExpanded ? "expanded" : "")">
+                                                <td class="site-name-cell">
+                                                    <button class="expand-btn" @onclick="@(() => ToggleSiteExpand(site.Id))">
+                                                        <span class="expand-icon">@(isExpanded ? "▼" : "▶")</span>
+                                                        <span class="site-label">@site.Name</span>
+                                                    </button>
+                                                </td>
                                     @foreach (var month in periodMonths)
                                     {
                                         var monthData = siteData?.MonthlyData.FirstOrDefault(m => m.Month.Month == month.Month && m.Month.Year == month.Year);
                                         var complianceRate = monthData?.ComplianceRate ?? 0;
                                         var ragClass = GetComplianceRAGClass(complianceRate);
-                                        <td class="score-cell @ragClass">
+                                                        <td class="score-cell @ragClass">
                                             @if (showValues)
                                             {
                                                 @if (monthData?.TotalRisks > 0)
                                                 {
-                                                    <span>@complianceRate%</span>
+                                                                            <span>@complianceRate%</span>
                                                 }
                                                 else
                                                 {
-                                                    <span>-</span>
+                                                                            <span>-</span>
                                                 }
                                             }
-                                        </td>
+                                                        </td>
                                     }
-                                </tr>
+                                            </tr>
 
                                 @if (isExpanded && siteData?.Risks != null && siteData.Risks.Any())
                                 {
-                                    <!-- Expanded Risk Details -->
-                                    <tr class="detail-container-row">
-                                        <td colspan="@(periodMonths.Count + 1)" class="detail-container-cell">
-                                            <div class="detail-table-wrapper">
-                                                <table class="detail-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th class="detail-risk-col">Risk</th>
-                                                            <th class="detail-owner-col">Owner</th>
+                                                    <!-- Expanded Risk Details -->
+                                                    <tr class="detail-container-row">
+                                                        <td colspan="@(periodMonths.Count + 1)" class="detail-container-cell">
+                                                            <div class="detail-table-wrapper">
+                                                                <table class="detail-table">
+                                                                    <colgroup>
+                                                                        <col style="@GetRiskColStyle()" />
+                                                                        <col style="@GetOwnerColStyle()" />
+                                                        @foreach (var month in periodMonths)
+                                                        {
+                                                                                <col />
+                                                        }
+                                                                    </colgroup>
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th class="detail-risk-col">Risk</th>
+                                                                            <th class="detail-owner-col">Owner</th>
                                                             @foreach (var month in periodMonths)
                                                             {
-                                                                <th class="detail-month-col">@month.ToString("MMM")</th>
+                                                                                    <th class="detail-month-col">@month.ToString("MMM")</th>
                                                             }
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        @foreach (var serviceGroup in siteData.Risks.GroupBy(r => r.ServiceName).OrderBy(g => g.Key))
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                        @foreach (var serviceGroup in siteData.Risks.GroupBy(r => r.ServiceName).OrderBy(g => GetServiceSortOrder(g.Key)))
                                                         {
-                                                            <tr class="detail-service-row">
-                                                                <td colspan="@(periodMonths.Count + 2)" class="detail-service-header">@serviceGroup.Key</td>
-                                                            </tr>
+                                                                                <tr class="detail-service-row">
+                                                                                    <td colspan="@(periodMonths.Count + 2)" class="detail-service-header">@serviceGroup.Key</td>
+                                                                                </tr>
                                                             @foreach (var risk in serviceGroup.OrderBy(r => r.RiskName))
                                                             {
-                                                                <tr class="detail-data-row">
-                                                                    <td class="detail-risk-name">@risk.RiskName</td>
-                                                                    <td class="detail-owner-name">@risk.OwnerName</td>
+                                                                                        <tr class="detail-data-row">
+                                                                                            <td class="detail-risk-name" title="@risk.RiskName">@risk.RiskName</td>
+                                                                                            <td class="detail-owner-name" title="@risk.OwnerName">@risk.OwnerName</td>
                                                                     @foreach (var month in periodMonths)
                                                                     {
                                                                         var monthRating = risk.MonthlyRatings.FirstOrDefault(m => m.Month.Month == month.Month && m.Month.Year == month.Year);
                                                                         var ragValue = monthRating?.RAGRating ?? "";
                                                                         var hasRating = !string.IsNullOrEmpty(ragValue) && ragValue != "-";
                                                                         var ragClass = hasRating ? GetRAGClass(ragValue) : "";
-                                                                        <td class="detail-rag-cell @ragClass clickable @(!hasRating ? "no-rating" : "")"
-                                                                            @onclick="@(async () => await OpenScoreEditorForMonth(risk.TRRiskId, risk.RiskName, site.Name, month))"
-                                                                            title="@(hasRating ? "Click to edit score" : "Click to add score")">
+                                                                                                    <td class="detail-rag-cell @ragClass clickable @(!hasRating ? "no-rating" : "")"
+                                                                                                        @onclick="@(async () => await OpenScoreEditorForMonth(risk.TRRiskId, risk.RiskName, site.Name, month))"
+                                                                                                        title="@(hasRating ? "Click to edit score" : "Click to add score")">
                                                                             @if (hasRating && showValues)
                                                                             {
-                                                                                <span>@FormatRAGDisplay(ragValue)</span>
+                                                                                                                <span>@FormatRAGDisplay(ragValue)</span>
                                                                             }
                                                                             else if (!hasRating)
                                                                             {
-                                                                                <span class="add-score-hint">+</span>
+                                                                                                                <span class="add-score-hint">+</span>
                                                                             }
-                                                                        </td>
+                                                                                                    </td>
                                                                     }
-                                                                </tr>
+                                                                                        </tr>
                                                             }
                                                         }
-                                                    </tbody>
-                                                </table>
-                                                <div class="add-risk-row">
-                                                    <button class="btn-add-risk" @onclick="@(() => OpenCreateRiskDialogForSite(site.Id, site.Name))">
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                                                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                                                        </svg>
-                                                        <span>Add Risk to @site.Name</span>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                                                    </tbody>
+                                                                </table>
+                                                                <div class="add-risk-row">
+                                                                    <button class="btn-add-risk" @onclick="@(() => OpenCreateRiskDialogForSite(site.Id, site.Name))">
+                                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                                                                        </svg>
+                                                                        <span>Add Risk to @site.Name</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
                                 }
                                 else if (isExpanded)
                                 {
-                                    <tr class="detail-container-row">
-                                        <td colspan="@(periodMonths.Count + 1)" class="no-risks-cell">
-                                            <div class="no-risks-content">
-                                                <span>No risks found for this facility</span>
-                                                <button class="btn-add-risk" @onclick="@(() => OpenCreateRiskDialogForSite(site.Id, site.Name))">
-                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                                                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                                                    </svg>
-                                                    <span>Add Risk</span>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                                    <tr class="detail-container-row">
+                                                        <td colspan="@(periodMonths.Count + 1)" class="no-risks-cell">
+                                                            <div class="no-risks-content">
+                                                                <span>No risks found for this facility</span>
+                                                                <button class="btn-add-risk" @onclick="@(() => OpenCreateRiskDialogForSite(site.Id, site.Name))">
+                                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                                                    </svg>
+                                                                    <span>Add Risk</span>
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
                                 }
                             }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
         }
     }
 
     <!-- Score Edit Modal -->
     @if (showScoreDialog)
     {
-        <div class="modal-overlay" @onclick="CloseScoreDialog">
-            <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
-                <div class="modal-header">
-                    <h3>@(isNewScore ? "Add Score" : "Update Score")</h3>
-                    <button class="modal-close" @onclick="CloseScoreDialog">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
-                </div>
-                <div class="modal-body">
+            <div class="modal-overlay" @onclick="CloseScoreDialog">
+                <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h3>@(isNewScore ? "Add Score" : "Update Score")</h3>
+                        <button class="modal-close" @onclick="CloseScoreDialog">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="modal-body">
                     @if (quickAddMode && scoreRequest.TRRiskId == 0 && string.IsNullOrEmpty(saveError))
                     {
                         @* Quick Add Mode - Risk Selection *@
-                        <div class="quick-add-selectors">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Facility *</label>
-                                    <RadzenDropDown @bind-Value="quickAddSiteId"
-                                                    Data="@filteredSites"
-                                                    TextProperty="Name"
-                                                    ValueProperty="Id"
-                                                    Placeholder="Select Facility"
-                                                    AllowFiltering="true"
-                                                    Change="@OnQuickAddSiteChanged"
-                                                    Style="width: 100%;" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Period *</label>
-                                    <RadzenDropDown @bind-Value="quickAddMonth"
-                                                    Data="@quickAddMonthOptions"
-                                                    TextProperty="Label"
-                                                    ValueProperty="Value"
-                                                    Style="width: 100%;" />
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label>Risk *</label>
+                                <div class="quick-add-selectors">
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Facility *</label>
+                                            <RadzenDropDown @bind-Value="quickAddSiteId"
+                                                            Data="@filteredSites"
+                                                            TextProperty="Name"
+                                                            ValueProperty="Id"
+                                                            Placeholder="Select Facility"
+                                                            AllowFiltering="true"
+                                                            Change="@OnQuickAddSiteChanged"
+                                                            Style="width: 100%;" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Period *</label>
+                                            <RadzenDropDown @bind-Value="quickAddMonth"
+                                                            Data="@quickAddMonthOptions"
+                                                            TextProperty="Label"
+                                                            ValueProperty="Value"
+                                                            Style="width: 100%;" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Risk *</label>
                                 @if (quickAddSiteId == null)
                                 {
-                                    <p class="score-hint">Select a facility to see available risks.</p>
+                                                <p class="score-hint">Select a facility to see available risks.</p>
                                 }
                                 else if (isLoadingQuickAddRisks)
                                 {
-                                    <p class="score-hint">Loading risks...</p>
+                                                <p class="score-hint">Loading risks...</p>
                                 }
                                 else if (!quickAddRisks.Any())
                                 {
-                                    <p class="score-hint">No risks found for this facility.</p>
+                                                <p class="score-hint">No risks found for this facility.</p>
                                 }
                                 else
                                 {
-                                    <RadzenDropDown @bind-Value="quickAddRiskId"
-                                                    Data="@quickAddRisks"
-                                                    TextProperty="Name"
-                                                    ValueProperty="TRRiskId"
-                                                    Placeholder="Select Risk"
-                                                    AllowFiltering="true"
-                                                    Style="width: 100%;" />
+                                                <RadzenDropDown @bind-Value="quickAddRiskId"
+                                                                Data="@quickAddRisks"
+                                                                TextProperty="Name"
+                                                                ValueProperty="TRRiskId"
+                                                                Placeholder="Select Risk"
+                                                                AllowFiltering="true"
+                                                                Style="width: 100%;" />
                                 }
-                            </div>
-                            <div class="quick-add-actions">
-                                <button type="button" class="btn btn-primary" @onclick="LoadQuickAddRisk"
-                                        disabled="@(quickAddSiteId == null || quickAddRiskId == null)">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <polyline points="9 18 15 12 9 6"></polyline>
-                                    </svg>
-                                    <span>Load Risk</span>
-                                </button>
-                            </div>
-                        </div>
+                                    </div>
+                                    <div class="quick-add-actions">
+                                        <button type="button" class="btn btn-primary" @onclick="LoadQuickAddRisk"
+                                                disabled="@(quickAddSiteId == null || quickAddRiskId == null)">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="9 18 15 12 9 6"></polyline>
+                                            </svg>
+                                            <span>Load Risk</span>
+                                        </button>
+                                    </div>
+                                </div>
                     }
                     else if (scoreRequest.TRRiskId == 0 && !string.IsNullOrEmpty(saveError))
                     {
                         @* No risk exists - show error message only *@
-                        <div class="no-risk-message">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <line x1="12" y1="8" x2="12" y2="12"></line>
-                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                            </svg>
-                            <h4>No Risk Record Found</h4>
-                            <p>@saveError</p>
-                            <p class="hint">To add a score here, first create a risk record for this combination in the Risk Management section.</p>
-                        </div>
+                                <div class="no-risk-message">
+                                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <h4>No Risk Record Found</h4>
+                                    <p>@saveError</p>
+                                    <p class="hint">To add a score here, first create a risk record for this combination in the Risk Management section.</p>
+                                </div>
                     }
                     else
                     {
-                        <div class="score-info">
-                            <div class="info-row">
-                                <span class="info-label">Risk:</span>
-                                <span class="info-value">@editingRiskName</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Facility:</span>
-                                <span class="info-value">@editingFacilityName</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Period:</span>
-                                <span class="info-value">@editingMonth.ToString("MMMM yyyy")</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Current Rating:</span>
-                                <span class="info-value">
+                                <div class="score-info">
+                                    <div class="info-row">
+                                        <span class="info-label">Risk:</span>
+                                        <span class="info-value">@editingRiskName</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">Facility:</span>
+                                        <span class="info-value">@editingFacilityName</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">Period:</span>
+                                        <span class="info-value">@editingMonth.ToString("MMMM yyyy")</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">Current Rating:</span>
+                                        <span class="info-value">
                                     @if (!string.IsNullOrEmpty(currentRAGRating))
                                     {
-                                        <span class="current-rag-badge @GetRAGClass(currentRAGRating)">@FormatRAGDisplay(currentRAGRating)</span>
+                                                    <span class="current-rag-badge @GetRAGClass(currentRAGRating)">@FormatRAGDisplay(currentRAGRating)</span>
                                     }
                                     else
                                     {
-                                        <span class="no-rating">Not rated</span>
+                                                    <span class="no-rating">Not rated</span>
                                     }
-                                </span>
-                            </div>
-                        </div>
+                                        </span>
+                                    </div>
+                                </div>
 
                         @* Threshold Preview *@
                         @if (editingThreshold != null)
                         {
-                            <div class="threshold-section">
-                                <label>Threshold Ranges</label>
-                                <div class="threshold-preview-bar">
-                                    <div class="threshold-segment green" style="flex: @editingThreshold.GreenMax;">
-                                        <span>Green (0-@editingThreshold.GreenMax.ToString("0.#"))</span>
-                                    </div>
-                                    <div class="threshold-segment amber" style="flex: @((editingThreshold.AmberMax - editingThreshold.GreenMax));">
-                                        <span>Amber (@editingThreshold.GreenMax.ToString("0.#")-@editingThreshold.AmberMax.ToString("0.#"))</span>
-                                    </div>
-                                    <div class="threshold-segment red" style="flex: @(Math.Max(20, 100 - editingThreshold.AmberMax));">
-                                        <span>Red (>@editingThreshold.AmberMax.ToString("0.#"))</span>
-                                    </div>
-                                </div>
-                            </div>
+                                        <div class="threshold-section">
+                                            <label>Threshold Ranges</label>
+                                            <div class="threshold-preview-bar">
+                                                <div class="threshold-segment green" style="flex: @editingThreshold.GreenMax;">
+                                                    <span>Green (0-@editingThreshold.GreenMax.ToString("0.#"))</span>
+                                                </div>
+                                                <div class="threshold-segment amber" style="flex: @((editingThreshold.AmberMax - editingThreshold.GreenMax));">
+                                                    <span>Amber (@editingThreshold.GreenMax.ToString("0.#")-@editingThreshold.AmberMax.ToString("0.#"))</span>
+                                                </div>
+                                                <div class="threshold-segment red" style="flex: @(Math.Max(20, 100 - editingThreshold.AmberMax));">
+                                                    <span>Red (>@editingThreshold.AmberMax.ToString("0.#"))</span>
+                                                </div>
+                                            </div>
+                                        </div>
 
                             @* Score Required Mode (with threshold) *@
-                            <div class="form-group">
-                                <label>@(IsEditingThresholdScaleMode ? "Score Band *" : "Score *")</label>
+                                        <div class="form-group">
+                                            <label>@(IsEditingThresholdScaleMode ? "Score Band *" : "Score *")</label>
                                 @if (IsEditingThresholdScaleMode)
                                 {
-                                    <div class="band-selector">
-                                        @foreach (var band in thresholdScoreBands)
-                                        {
-                                            <button type="button"
-                                                    class="band-option @band.Label.ToLower() @(selectedThresholdBandValue == band.Value ? "selected" : "")"
-                                                    @onclick="@(() => SelectThresholdBand(band.Value))">
-                                                @band.Label
-                                            </button>
-                                        }
-                                    </div>
+                                                    <RadzenDropDown @bind-Value="selectedThresholdBandValue"
+                                                                    Data="@thresholdScoreBands"
+                                                                    TextProperty="Label"
+                                                                    ValueProperty="Value"
+                                                                    Placeholder="Select threshold band"
+                                                                    Style="width: 100%;"
+                                                                    TValue="decimal?"
+                                                                    Change="@OnThresholdBandChanged" />
                                 }
                                 else
                                 {
-                                    <RadzenNumeric @bind-Value="scoreRequest.Score" Min="0" Max="999" Style="width: 100%;"
-                                                   Placeholder="Enter actual value (required)" TValue="decimal"
-                                                   Change="@OnScoreChanged" />
+                                                    <RadzenNumeric @bind-Value="scoreRequest.Score" Min="0" Max="999" Style="width: 100%;"
+                                                                   Placeholder="Enter actual value (required)" TValue="decimal"
+                                                                   Change="@OnScoreChanged" />
                                 }
-                            </div>
+                                        </div>
 
                             @* Show calculated RAG *@
                             @if (scoreRequest.Score > 0 && !string.IsNullOrEmpty(autoCalculatedRAG))
                             {
-                                <div class="calculated-rag-section">
-                                    <div class="calculated-rag-display">
-                                        <span class="calc-label">Calculated Rating:</span>
-                                        <span class="current-rag-badge @GetRAGClass(autoCalculatedRAG)">@FormatRAGDisplay(autoCalculatedRAG)</span>
-                                    </div>
+                                                <div class="calculated-rag-section">
+                                                    <div class="calculated-rag-display">
+                                                        <span class="calc-label">Calculated Rating:</span>
+                                                        <span class="current-rag-badge @GetRAGClass(autoCalculatedRAG)">@FormatRAGDisplay(autoCalculatedRAG)</span>
+                                                    </div>
 
                                     @* Override toggle *@
-                                    <div class="override-toggle">
-                                        <label class="toggle-label">
-                                            <input type="checkbox" @bind="isOverrideMode" @bind:after="OnOverrideModeChanged" />
-                                            <span>Override calculated rating</span>
-                                        </label>
-                                    </div>
+                                                    <div class="override-toggle">
+                                                        <label class="toggle-label">
+                                                            <input type="checkbox" @bind="isOverrideMode" @bind:after="OnOverrideModeChanged" />
+                                                            <span>Override calculated rating</span>
+                                                        </label>
+                                                    </div>
 
                                     @if (isOverrideMode)
                                     {
-                                        <div class="override-section">
-                                            <div class="form-group">
-                                                <label>Override to: *</label>
-                                                <div class="rag-selector">
-                                                    <button type="button" class="rag-option green @(scoreRequest.RAGRating == "GREEN" ? "selected" : "")"
-                                                            @onclick="@(() => SelectRAG("GREEN"))">
-                                                        <span class="rag-dot"></span>
-                                                        Green
-                                                    </button>
-                                                    <button type="button" class="rag-option amber @(scoreRequest.RAGRating == "AMB" ? "selected" : "")"
-                                                            @onclick="@(() => SelectRAG("AMB"))">
-                                                        <span class="rag-dot"></span>
-                                                        Amber
-                                                    </button>
-                                                    <button type="button" class="rag-option red @(scoreRequest.RAGRating == "RED" ? "selected" : "")"
-                                                            @onclick="@(() => SelectRAG("RED"))">
-                                                        <span class="rag-dot"></span>
-                                                        Red
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <div class="form-group">
-                                                <label>Reason for Override *</label>
-                                                <RadzenTextArea @bind-Value="overrideReason" Rows="2" Style="width: 100%;"
-                                                                Placeholder="Please explain why you're overriding the calculated rating..." />
-                                            </div>
-                                        </div>
+                                                            <div class="override-section">
+                                                                <div class="form-group">
+                                                                    <label>Override to: *</label>
+                                                                    <div class="rag-selector">
+                                                                        <button type="button" class="rag-option green @(scoreRequest.RAGRating == "GREEN" ? "selected" : "")"
+                                                                                @onclick="@(() => SelectRAG("GREEN"))">
+                                                                            <span class="rag-dot"></span>
+                                                                            Green
+                                                                        </button>
+                                                                        <button type="button" class="rag-option amber @(scoreRequest.RAGRating == "AMB" ? "selected" : "")"
+                                                                                @onclick="@(() => SelectRAG("AMB"))">
+                                                                            <span class="rag-dot"></span>
+                                                                            Amber
+                                                                        </button>
+                                                                        <button type="button" class="rag-option red @(scoreRequest.RAGRating == "RED" ? "selected" : "")"
+                                                                                @onclick="@(() => SelectRAG("RED"))">
+                                                                            <span class="rag-dot"></span>
+                                                                            Red
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="form-group">
+                                                                    <label>Reason for Override *</label>
+                                                                    <RadzenTextArea @bind-Value="overrideReason" Rows="2" Style="width: 100%;"
+                                                                                    Placeholder="Please explain why you're overriding the calculated rating..." />
+                                                                </div>
+                                                            </div>
                                     }
-                                </div>
+                                                </div>
                             }
                             else
                             {
-                                <p class="score-hint">Enter a score above to calculate the RAG rating.</p>
+                                                <p class="score-hint">Enter a score above to calculate the RAG rating.</p>
                             }
                         }
                         else
                         {
                             @* Manual Mode (no threshold) *@
-                            <div class="threshold-section no-threshold">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="color: #ca8a04;">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                                </svg>
-                                <p class="threshold-hint">No threshold defined for this risk. Please select RAG rating manually.</p>
-                            </div>
+                                        <div class="threshold-section no-threshold">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="color: #ca8a04;">
+                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                                            </svg>
+                                            <p class="threshold-hint">No threshold defined for this risk. Please select RAG rating manually.</p>
+                                        </div>
 
-                            <div class="form-group">
-                                <label>Score (Optional)</label>
-                                <RadzenNumeric @bind-Value="scoreRequest.Score" Min="0" Max="999" Style="width: 100%;"
-                                               Placeholder="Enter value" TValue="decimal" />
-                            </div>
+                                        <div class="form-group">
+                                            <label>Score (Optional)</label>
+                                            <RadzenNumeric @bind-Value="scoreRequest.Score" Min="0" Max="999" Style="width: 100%;"
+                                                           Placeholder="Enter value" TValue="decimal" />
+                                        </div>
 
-                            <div class="form-group">
-                                <label>RAG Rating *</label>
-                                <div class="rag-selector">
-                                    <button type="button" class="rag-option green @(scoreRequest.RAGRating == "GREEN" ? "selected" : "")"
-                                            @onclick="@(() => SelectRAG("GREEN"))">
-                                        <span class="rag-dot"></span>
-                                        Green
-                                    </button>
-                                    <button type="button" class="rag-option amber @(scoreRequest.RAGRating == "AMB" ? "selected" : "")"
-                                            @onclick="@(() => SelectRAG("AMB"))">
-                                        <span class="rag-dot"></span>
-                                        Amber
-                                    </button>
-                                    <button type="button" class="rag-option red @(scoreRequest.RAGRating == "RED" ? "selected" : "")"
-                                            @onclick="@(() => SelectRAG("RED"))">
-                                        <span class="rag-dot"></span>
-                                        Red
-                                    </button>
-                                </div>
-                            </div>
+                                        <div class="form-group">
+                                            <label>RAG Rating *</label>
+                                            <div class="rag-selector">
+                                                <button type="button" class="rag-option green @(scoreRequest.RAGRating == "GREEN" ? "selected" : "")"
+                                                        @onclick="@(() => SelectRAG("GREEN"))">
+                                                    <span class="rag-dot"></span>
+                                                    Green
+                                                </button>
+                                                <button type="button" class="rag-option amber @(scoreRequest.RAGRating == "AMB" ? "selected" : "")"
+                                                        @onclick="@(() => SelectRAG("AMB"))">
+                                                    <span class="rag-dot"></span>
+                                                    Amber
+                                                </button>
+                                                <button type="button" class="rag-option red @(scoreRequest.RAGRating == "RED" ? "selected" : "")"
+                                                        @onclick="@(() => SelectRAG("RED"))">
+                                                    <span class="rag-dot"></span>
+                                                    Red
+                                                </button>
+                                            </div>
+                                        </div>
                         }
 
-                        <div class="form-group">
-                            <label>Notes</label>
-                            <RadzenTextArea @bind-Value="scoreRequest.Notes" Rows="3" Style="width: 100%;" Placeholder="Add notes or comments..." />
-                        </div>
+                                <div class="form-group">
+                                    <label>Notes</label>
+                                    <RadzenTextArea @bind-Value="scoreRequest.Notes" Rows="3" Style="width: 100%;" Placeholder="Add notes or comments..." />
+                                </div>
 
                         @if (!string.IsNullOrEmpty(saveError) && scoreRequest.TRRiskId > 0)
                         {
-                            <div class="error-message">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                                </svg>
-                                <span>@saveError</span>
-                            </div>
+                                        <div class="error-message">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                                            </svg>
+                                            <span>@saveError</span>
+                                        </div>
                         }
                     } @* End of else block for normal form *@
-                </div>
-                <div class="modal-footer">
+                    </div>
+                    <div class="modal-footer">
                     @if (quickAddMode && scoreRequest.TRRiskId == 0 && string.IsNullOrEmpty(saveError))
                     {
-                        <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Cancel</button>
+                                <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Cancel</button>
                     }
                     else if (scoreRequest.TRRiskId == 0 && !string.IsNullOrEmpty(saveError))
                     {
-                        <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Close</button>
+                                <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Close</button>
                     }
                     else
                     {
-                        <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Cancel</button>
-                        <button type="button" class="btn btn-primary" @onclick="SaveScore" disabled="@(!CanSave() || isSaving)">
+                                <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Cancel</button>
+                                <button type="button" class="btn btn-primary" @onclick="SaveScore" disabled="@(!CanSave() || isSaving)">
                             @if (isSaving)
                             {
-                                <span>Saving...</span>
+                                            <span>Saving...</span>
                             }
                             else
                             {
-                                <span>Save Score</span>
+                                            <span>Save Score</span>
                             }
-                        </button>
+                                </button>
                     }
+                    </div>
                 </div>
             </div>
-        </div>
     }
 
     <!-- Create Risk Modal -->
     @if (showCreateRiskDialog)
     {
-        <div class="modal-overlay" @onclick="CloseCreateRiskDialog">
-            <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
-                <div class="modal-header">
-                    <h3>Create New Risk</h3>
-                    <button class="modal-close" @onclick="CloseCreateRiskDialog">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
-                </div>
-                <div class="modal-body">
-                    <p class="create-risk-intro">This risk doesn't exist at this facility yet. Create it now and optionally add the first score.</p>
+            <div class="modal-overlay" @onclick="CloseCreateRiskDialog">
+                <div class="modal-dialog modal-lg" @onclick:stopPropagation="true">
+                    <div class="modal-header">
+                        <h3>Create New Risk</h3>
+                        <button class="modal-close" @onclick="CloseCreateRiskDialog">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="create-risk-intro">This risk doesn't exist at this facility yet. Create it now and optionally add the first score.</p>
 
                     @if (!string.IsNullOrEmpty(createRiskError))
                     {
-                        <div class="error-message">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                            </svg>
-                            <span>@createRiskError</span>
-                        </div>
+                                <div class="error-message">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                                    </svg>
+                                    <span>@createRiskError</span>
+                                </div>
                     }
 
-                    <div class="create-risk-info">
+                        <div class="create-risk-info">
                         @if (string.IsNullOrEmpty(createRiskServiceName))
                         {
-                            <div class="form-group">
-                                <label>Service *</label>
-                                <RadzenDropDown @bind-Value="newRiskRequest.ServiceId"
-                                                Data="@services"
-                                                TextProperty="Name"
-                                                ValueProperty="Id"
-                                                Placeholder="Select service..."
-                                                Style="width: 100%;"
-                                                Change="@OnCreateRiskServiceChanged" />
-                            </div>
+                                    <div class="form-group">
+                                        <label>Service *</label>
+                                        <RadzenDropDown @bind-Value="newRiskRequest.ServiceId"
+                                                        Data="@services"
+                                                        TextProperty="Name"
+                                                        ValueProperty="Id"
+                                                        Placeholder="Select service..."
+                                                        Style="width: 100%;"
+                                                        Change="@OnCreateRiskServiceChanged" />
+                                    </div>
                         }
                         else
                         {
-                            <div class="info-row">
-                                <span class="info-label">Service:</span>
-                                <span class="info-value">@createRiskServiceName</span>
-                            </div>
+                                    <div class="info-row">
+                                        <span class="info-label">Service:</span>
+                                        <span class="info-value">@createRiskServiceName</span>
+                                    </div>
                         }
-                        <div class="info-row">
-                            <span class="info-label">Facility:</span>
-                            <span class="info-value">@createRiskFacilityName</span>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Risk Category *</label>
-                        <RadzenDropDown @bind-Value="newRiskRequest.RiskCategoryId"
-                                        Data="@createRiskCategories"
-                                        TextProperty="Name"
-                                        ValueProperty="Id"
-                                        Placeholder="Select category..."
-                                        Style="width: 100%;"
-                                        Change="@OnCreateRiskCategoryChanged" />
-                    </div>
-
-                    <div class="form-group">
-                        <label>Owner *</label>
-                        <RadzenDropDown @bind-Value="newRiskRequest.OwnerId"
-                                        Data="@owners"
-                                        TextProperty="Name"
-                                        ValueProperty="Id"
-                                        Placeholder="Select owner..."
-                                        Style="width: 100%;" />
-                    </div>
-
-                    <div class="form-group">
-                        <label>Risk Name</label>
-                        <RadzenTextBox @bind-Value="newRiskRequest.Name"
-                                       Placeholder="Auto-generated from Category + Facility"
-                                       Style="width: 100%;" />
-                        <span class="form-hint">Leave blank to auto-generate</span>
-                    </div>
-
-                    <div class="create-risk-divider">
-                        <span>Initial Score (Optional)</span>
-                    </div>
-
-                    @if (newRiskThreshold != null)
-                    {
-                        <div class="threshold-section">
-                            <label>Threshold Ranges</label>
-                            <div class="threshold-preview-bar">
-                                <div class="threshold-segment green" style="flex: @newRiskThreshold.GreenMax;">
-                                    <span>Green (0-@newRiskThreshold.GreenMax.ToString("0.#"))</span>
-                                </div>
-                                <div class="threshold-segment amber" style="flex: @((newRiskThreshold.AmberMax - newRiskThreshold.GreenMax));">
-                                    <span>Amber (@newRiskThreshold.GreenMax.ToString("0.#")-@newRiskThreshold.AmberMax.ToString("0.#"))</span>
-                                </div>
-                                <div class="threshold-segment red" style="flex: @(Math.Max(20, 100 - newRiskThreshold.AmberMax));">
-                                    <span>Red (>@newRiskThreshold.AmberMax.ToString("0.#"))</span>
-                                </div>
+                            <div class="info-row">
+                                <span class="info-label">Facility:</span>
+                                <span class="info-value">@createRiskFacilityName</span>
                             </div>
                         </div>
 
                         <div class="form-group">
-                            <label>@(IsNewRiskThresholdScaleMode ? "Score Band" : "Score")</label>
+                            <label>Risk Category *</label>
+                            <RadzenDropDown @bind-Value="newRiskRequest.RiskCategoryId"
+                                            Data="@createRiskCategories"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select category..."
+                                            Style="width: 100%;"
+                                            Change="@OnCreateRiskCategoryChanged" />
+                        </div>
+
+                        <div class="form-group">
+                            <label>Owner *</label>
+                            <RadzenDropDown @bind-Value="newRiskRequest.OwnerId"
+                                            Data="@owners"
+                                            TextProperty="Name"
+                                            ValueProperty="Id"
+                                            Placeholder="Select owner..."
+                                            Style="width: 100%;" />
+                        </div>
+
+                        <div class="form-group">
+                            <label>Risk Name</label>
+                            <RadzenTextBox @bind-Value="newRiskRequest.Name"
+                                           Placeholder="Auto-generated from Category + Facility"
+                                           Style="width: 100%;" />
+                            <span class="form-hint">Leave blank to auto-generate</span>
+                        </div>
+
+                        <div class="create-risk-divider">
+                            <span>Initial Score (Optional)</span>
+                        </div>
+
+                    @if (newRiskThreshold != null)
+                    {
+                                <div class="threshold-section">
+                                    <label>Threshold Ranges</label>
+                                    <div class="threshold-preview-bar">
+                                        <div class="threshold-segment green" style="flex: @newRiskThreshold.GreenMax;">
+                                            <span>Green (0-@newRiskThreshold.GreenMax.ToString("0.#"))</span>
+                                        </div>
+                                        <div class="threshold-segment amber" style="flex: @((newRiskThreshold.AmberMax - newRiskThreshold.GreenMax));">
+                                            <span>Amber (@newRiskThreshold.GreenMax.ToString("0.#")-@newRiskThreshold.AmberMax.ToString("0.#"))</span>
+                                        </div>
+                                        <div class="threshold-segment red" style="flex: @(Math.Max(20, 100 - newRiskThreshold.AmberMax));">
+                                            <span>Red (>@newRiskThreshold.AmberMax.ToString("0.#"))</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label>@(IsNewRiskThresholdScaleMode ? "Score Band" : "Score")</label>
                             @if (IsNewRiskThresholdScaleMode)
                             {
-                                <div class="band-selector">
-                                    @foreach (var band in thresholdScoreBands)
-                                    {
-                                        <button type="button"
-                                                class="band-option @band.Label.ToLower() @(selectedNewRiskThresholdBandValue == band.Value ? "selected" : "")"
-                                                @onclick="@(() => SelectNewRiskThresholdBand(band.Value))">
-                                            @band.Label
-                                        </button>
-                                    }
-                                </div>
+                                            <RadzenDropDown @bind-Value="selectedNewRiskThresholdBandValue"
+                                                            Data="@thresholdScoreBands"
+                                                            TextProperty="Label"
+                                                            ValueProperty="Value"
+                                                            Placeholder="Select threshold band"
+                                                            Style="width: 100%;"
+                                                            TValue="decimal?"
+                                                            Change="@OnNewRiskThresholdBandChanged" />
                             }
                             else
                             {
-                                <RadzenNumeric @bind-Value="newRiskScore" Min="0" Max="999" Style="width: 100%;"
-                                               Placeholder="Enter score value" TValue="decimal"
-                                               Change="@OnNewRiskScoreChanged" />
+                                            <RadzenNumeric @bind-Value="newRiskScore" Min="0" Max="999" Style="width: 100%;"
+                                                           Placeholder="Enter score value" TValue="decimal"
+                                                           Change="@OnNewRiskScoreChanged" />
                             }
-                        </div>
+                                </div>
 
                         @if (newRiskScore > 0 && !string.IsNullOrEmpty(newRiskCalculatedRAG))
                         {
-                            <div class="calculated-rag-display">
-                                <span class="calc-label">Calculated Rating:</span>
-                                <span class="current-rag-badge @GetRAGClass(newRiskCalculatedRAG)">@FormatRAGDisplay(newRiskCalculatedRAG)</span>
-                            </div>
+                                        <div class="calculated-rag-display">
+                                            <span class="calc-label">Calculated Rating:</span>
+                                            <span class="current-rag-badge @GetRAGClass(newRiskCalculatedRAG)">@FormatRAGDisplay(newRiskCalculatedRAG)</span>
+                                        </div>
                         }
                     }
                     else
                     {
-                        <p class="no-threshold-hint">No threshold defined for this category. You can add a score after creating the risk.</p>
+                                <p class="no-threshold-hint">No threshold defined for this category. You can add a score after creating the risk.</p>
                     }
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="CloseCreateRiskDialog">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="CreateRiskAndScore" disabled="@(!CanCreateRisk() || isCreatingRisk)">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseCreateRiskDialog">Cancel</button>
+                        <button type="button" class="btn btn-primary" @onclick="CreateRiskAndScore" disabled="@(!CanCreateRisk() || isCreatingRisk)">
                         @if (isCreatingRisk)
                         {
-                            <span>Creating...</span>
+                                    <span>Creating...</span>
                         }
                         else
                         {
-                            <span>@(newRiskScore > 0 ? "Create & Add Score" : "Create Risk")</span>
+                                    <span>@(newRiskScore > 0 ? "Create & Add Score" : "Create Risk")</span>
                         }
-                    </button>
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
     }
 
     <!-- Help Section -->
@@ -921,6 +936,38 @@
         if (string.IsNullOrEmpty(facilityName)) return "";
         return FacilityMap.TryGetValue(facilityName, out var code) ? code : facilityName;
     }
+
+    private int GetServiceSortOrder(string? serviceName) => serviceName switch
+    {
+        "TR RAC" => 0,
+        "TR Home Care" => 1,
+        "TR RV" => 2,
+        _ => 3
+    };
+
+    private string GetFacilityColStyle() => selectedPeriod switch
+    {
+        1 => "width: 50%;",
+        3 => "width: 35%;",
+        6 => "width: 22%;",
+        _ => "width: 16%;"
+    };
+
+    private string GetRiskColStyle() => selectedPeriod switch
+    {
+        1 => "width: 42%;",
+        3 => "width: 32%;",
+        6 => "width: 24%;",
+        _ => "width: 18%;"
+    };
+
+    private string GetOwnerColStyle() => selectedPeriod switch
+    {
+        1 => "width: 18%;",
+        3 => "width: 13%;",
+        6 => "width: 9%;",
+        _ => "width: 7%;"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -1279,7 +1326,6 @@
             "RED" => "rag-red",
             "AMB" or "AMBER" => "rag-amber",
             "GRE" or "GREEN" => "rag-green",
-            "EXTREME" => "rag-extreme",
             _ => ""
         };
     }
@@ -1308,7 +1354,6 @@
             "GRE" => "Green",
             "AMBER" => "Amber",
             "GREEN" => "Green",
-            "EXTREME" => "Extreme",
             _ => rating ?? "-"
         };
     }
@@ -1369,20 +1414,32 @@
             : null;
     }
 
-    private void SelectThresholdBand(decimal value)
+    private void OnThresholdBandChanged(object? value)
     {
-        selectedThresholdBandValue = value;
-        scoreRequest.Score = value;
-        scoreRequest.RAGRating = GetRagFromBandValue(value);
+        selectedThresholdBandValue = value as decimal?;
+        if (value is decimal decimalValue)
+        {
+            selectedThresholdBandValue = decimalValue;
+        }
+
+        scoreRequest.Score = selectedThresholdBandValue ?? 0;
+        scoreRequest.RAGRating = GetRagFromBandValue(selectedThresholdBandValue);
         autoCalculatedRAG = scoreRequest.RAGRating;
+
         StateHasChanged();
     }
 
-    private void SelectNewRiskThresholdBand(decimal value)
+    private void OnNewRiskThresholdBandChanged(object? value)
     {
-        selectedNewRiskThresholdBandValue = value;
-        newRiskScore = value;
-        newRiskCalculatedRAG = GetRagFromBandValue(value);
+        selectedNewRiskThresholdBandValue = value as decimal?;
+        if (value is decimal decimalValue)
+        {
+            selectedNewRiskThresholdBandValue = decimalValue;
+        }
+
+        newRiskScore = selectedNewRiskThresholdBandValue ?? 0;
+        newRiskCalculatedRAG = GetRagFromBandValue(selectedNewRiskThresholdBandValue);
+
         StateHasChanged();
     }
 
@@ -2138,11 +2195,11 @@
         margin: 0 auto;
     }
 
-        .turnaround-risk-page .filter-bar {
-            position: sticky;
-            top: 5.5rem;
-            z-index: 45;
-        }
+    .turnaround-risk-page .filter-bar {
+        position: sticky;
+        top: 5.5rem;
+        z-index: 45;
+    }
 
     /* Card container */
     .card {
@@ -2376,8 +2433,8 @@
     }
 
     /* ========================================
-               RISK MATRIX (All Sites View)
-               ======================================== */
+           RISK MATRIX (All Sites View)
+           ======================================== */
     .risk-matrix-container {
         overflow-x: auto;
     }
@@ -2434,14 +2491,16 @@
         }
 
     .service-header-row .service-header {
-        background: var(--accent-color);
-        color: #333;
-        font-weight: 600;
+        background: var(--bg-light, #f1f5f9);
+        color: var(--text-primary, #1e293b);
+        font-weight: 700;
         text-align: left;
         font-size: 0.75rem;
         padding: 0.5rem 0.625rem;
         position: sticky;
         left: 0;
+        border-left: 3px solid var(--accent-color, #f59e0b);
+        letter-spacing: 0.02em;
     }
 
     /* RAG Cells */
@@ -2465,11 +2524,6 @@
             color: #16a34a;
         }
 
-        .rag-cell.rag-extreme {
-            background: rgba(153, 27, 27, 0.18);
-            color: #991b1b;
-        }
-
     .rag-text {
         font-size: 0.6875rem;
         font-weight: 600;
@@ -2484,8 +2538,8 @@
     }
 
     /* ========================================
-               SITE DRILLDOWN VIEW
-               ======================================== */
+           SITE DRILLDOWN VIEW
+           ======================================== */
     .site-drilldown-container {
         overflow-x: auto;
     }
@@ -2493,6 +2547,7 @@
     .site-drilldown {
         width: 100%;
         border-collapse: collapse;
+        table-layout: fixed;
         font-size: 0.75rem;
     }
 
@@ -2505,13 +2560,15 @@
 
         .site-drilldown .site-col-header {
             text-align: left;
-            min-width: 220px;
             background: var(--bg-light);
             font-weight: 600;
             font-size: 0.6875rem;
             text-transform: uppercase;
             letter-spacing: 0.3px;
             color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .site-drilldown .month-col-header {
@@ -2521,7 +2578,6 @@
             text-transform: uppercase;
             letter-spacing: 0.3px;
             color: var(--text-primary);
-            min-width: 80px;
         }
 
     .site-row {
@@ -2539,6 +2595,7 @@
     .site-name-cell {
         text-align: left;
         padding: 0 !important;
+        overflow: hidden;
     }
 
     .expand-btn {
@@ -2570,6 +2627,9 @@
 
     .site-label {
         font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .score-cell {
@@ -2595,6 +2655,7 @@
     .detail-table {
         width: 100%;
         border-collapse: collapse;
+        table-layout: fixed;
         background: var(--card-bg);
         border-radius: 4px;
         overflow: hidden;
@@ -2620,37 +2681,42 @@
 
     .detail-risk-col {
         text-align: left !important;
-        min-width: 180px;
     }
 
     .detail-owner-col {
         text-align: left !important;
-        min-width: 120px;
     }
 
     .detail-month-col {
-        min-width: 65px;
     }
 
     .detail-service-row .detail-service-header {
-        background: var(--accent-color);
-        color: #333;
-        font-weight: 600;
+        background: var(--bg-light, #f1f5f9);
+        color: var(--text-primary, #1e293b);
+        font-weight: 700;
         text-align: left;
         font-size: 0.6875rem;
         padding: 0.375rem 0.625rem;
+        border-left: 3px solid var(--accent-color, #f59e0b);
+        letter-spacing: 0.02em;
     }
 
     .detail-data-row .detail-risk-name {
         text-align: left;
         font-weight: 500;
         color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .detail-data-row .detail-owner-name {
         text-align: left;
         color: var(--text-secondary);
         font-weight: 400;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .detail-rag-cell {
@@ -2671,11 +2737,6 @@
         .detail-rag-cell.rag-green {
             background: rgba(34, 197, 94, 0.12);
             color: #16a34a;
-        }
-
-        .detail-rag-cell.rag-extreme {
-            background: rgba(153, 27, 27, 0.18);
-            color: #991b1b;
         }
 
     .no-risks-cell {
@@ -2859,6 +2920,7 @@
         align-items: center;
         justify-content: center;
         z-index: 1000;
+        backdrop-filter: blur(2px);
     }
 
     .modal-dialog {
@@ -2867,19 +2929,20 @@
         width: 100%;
         max-width: 480px;
         max-height: 90vh;
-        display: flex;
-        flex-direction: column;
+        overflow: hidden;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        animation: modalFadeIn 0.2s ease-out;
+        animation: modalSlideIn 0.2s ease-out;
     }
 
-    @@keyframes modalFadeIn {
+    @@keyframes modalSlideIn {
         from {
             opacity: 0;
+            transform: translateY(-20px);
         }
 
         to {
             opacity: 1;
+            transform: translateY(0);
         }
     }
 
@@ -2890,8 +2953,6 @@
         padding: 1rem 1.5rem;
         border-bottom: 1px solid var(--border-color, #e2e8f0);
         background: var(--bg-light, #f8fafc);
-        border-radius: 12px 12px 0 0;
-        flex-shrink: 0;
     }
 
         .modal-header h3 {
@@ -2919,7 +2980,7 @@
     .modal-body {
         padding: 1.5rem;
         overflow-y: auto;
-        flex: 1 1 auto;
+        max-height: calc(90vh - 140px);
     }
 
     .modal-footer {
@@ -2929,8 +2990,6 @@
         padding: 1rem 1.5rem;
         border-top: 1px solid var(--border-color, #e2e8f0);
         background: var(--bg-light, #f8fafc);
-        border-radius: 0 0 12px 12px;
-        flex-shrink: 0;
     }
 
     /* Score Info */
@@ -3037,69 +3096,6 @@
             color: #991b1b;
         }
 
-    /* Band Selector (threshold score bands) */
-    .band-selector {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .band-option {
-        flex: 1;
-        padding: 0.625rem 0.5rem;
-        border: 2px solid var(--border-color, #e2e8f0);
-        border-radius: 8px;
-        background: var(--card-bg, white);
-        cursor: pointer;
-        font-size: 0.8125rem;
-        font-weight: 600;
-        text-align: center;
-        transition: all 0.15s;
-    }
-
-        .band-option:hover {
-            border-color: #94a3b8;
-        }
-
-        .band-option.low {
-            color: #16a34a;
-        }
-
-            .band-option.low.selected {
-                background: #dcfce7;
-                border-color: #22c55e;
-                color: #166534;
-            }
-
-        .band-option.medium {
-            color: #d97706;
-        }
-
-            .band-option.medium.selected {
-                background: #fef3c7;
-                border-color: #f59e0b;
-                color: #92400e;
-            }
-
-        .band-option.high {
-            color: #dc2626;
-        }
-
-            .band-option.high.selected {
-                background: #fee2e2;
-                border-color: #ef4444;
-                color: #991b1b;
-            }
-
-        .band-option.extreme {
-            color: #991b1b;
-        }
-
-            .band-option.extreme.selected {
-                background: #fecaca;
-                border-color: #991b1b;
-                color: #7f1d1d;
-            }
-
     /* Buttons */
     .btn {
         padding: 0.625rem 1.25rem;
@@ -3180,11 +3176,6 @@
         .current-rag-badge.rag-red {
             background: #fee2e2;
             color: #991b1b;
-        }
-
-        .current-rag-badge.rag-extreme {
-            background: #fecaca;
-            color: #7f1d1d;
         }
 
     .no-rating {
@@ -3454,10 +3445,5 @@
         font-size: 0.75rem;
         color: var(--text-muted, #64748b);
         margin-top: 0.25rem;
-    }
-
-    /* Ensure Radzen dropdown popups appear above modal overlay */
-    :global(.rz-popup) {
-        z-index: 1100 !important;
     }
 </style>
