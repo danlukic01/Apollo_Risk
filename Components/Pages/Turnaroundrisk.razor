@@ -7,11 +7,7 @@
 <div class="turnaround-risk-page">
     <div class="page-header">
         <div class="header-icon">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-            </svg>
+            <RadzenIcon Icon="grid_view" style="font-size: 28px;" />
         </div>
         <div class="header-content">
             <h1>Turnaround Risk</h1>
@@ -82,6 +78,13 @@
                     <polyline points="1 20 1 14 7 14"></polyline>
                     <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                 </svg>
+            </button>
+            <button class="btn-add-score" @onclick="OpenQuickAddScore" title="Add Risk Score">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span>Add Risk Score</span>
             </button>
         </div>
         <div class="sub-header-right">
@@ -337,7 +340,68 @@
                     </button>
                 </div>
                 <div class="modal-body">
-                    @if (scoreRequest.TRRiskId == 0 && !string.IsNullOrEmpty(saveError))
+                    @if (quickAddMode && scoreRequest.TRRiskId == 0 && string.IsNullOrEmpty(saveError))
+                    {
+                        @* Quick Add Mode - Risk Selection *@
+                        <div class="quick-add-selectors">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Facility *</label>
+                                    <RadzenDropDown @bind-Value="quickAddSiteId"
+                                                    Data="@filteredSites"
+                                                    TextProperty="Name"
+                                                    ValueProperty="Id"
+                                                    Placeholder="Select Facility"
+                                                    AllowFiltering="true"
+                                                    Change="@OnQuickAddSiteChanged"
+                                                    Style="width: 100%;" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Period *</label>
+                                    <RadzenDropDown @bind-Value="quickAddMonth"
+                                                    Data="@quickAddMonthOptions"
+                                                    TextProperty="Label"
+                                                    ValueProperty="Value"
+                                                    Style="width: 100%;" />
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Risk *</label>
+                                @if (quickAddSiteId == null)
+                                {
+                                    <p class="score-hint">Select a facility to see available risks.</p>
+                                }
+                                else if (isLoadingQuickAddRisks)
+                                {
+                                    <p class="score-hint">Loading risks...</p>
+                                }
+                                else if (!quickAddRisks.Any())
+                                {
+                                    <p class="score-hint">No risks found for this facility.</p>
+                                }
+                                else
+                                {
+                                    <RadzenDropDown @bind-Value="quickAddRiskId"
+                                                    Data="@quickAddRisks"
+                                                    TextProperty="Name"
+                                                    ValueProperty="TRRiskId"
+                                                    Placeholder="Select Risk"
+                                                    AllowFiltering="true"
+                                                    Style="width: 100%;" />
+                                }
+                            </div>
+                            <div class="quick-add-actions">
+                                <button type="button" class="btn btn-primary" @onclick="LoadQuickAddRisk"
+                                        disabled="@(quickAddSiteId == null || quickAddRiskId == null)">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="9 18 15 12 9 6"></polyline>
+                                    </svg>
+                                    <span>Load Risk</span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    else if (scoreRequest.TRRiskId == 0 && !string.IsNullOrEmpty(saveError))
                     {
                         @* No risk exists - show error message only *@
                         <div class="no-risk-message">
@@ -404,14 +468,16 @@
                                 <label>@(IsEditingThresholdScaleMode ? "Score Band *" : "Score *")</label>
                                 @if (IsEditingThresholdScaleMode)
                                 {
-                                    <RadzenDropDown @bind-Value="selectedThresholdBandValue"
-                                                    Data="@thresholdScoreBands"
-                                                    TextProperty="Label"
-                                                    ValueProperty="Value"
-                                                    Placeholder="Select threshold band"
-                                                    Style="width: 100%;"
-                                                    TValue="decimal?"
-                                                    Change="@OnThresholdBandChanged" />
+                                    <div class="band-selector">
+                                        @foreach (var band in thresholdScoreBands)
+                                        {
+                                            <button type="button"
+                                                    class="band-option @band.Label.ToLower() @(selectedThresholdBandValue == band.Value ? "selected" : "")"
+                                                    @onclick="@(() => SelectThresholdBand(band.Value))">
+                                                @band.Label
+                                            </button>
+                                        }
+                                    </div>
                                 }
                                 else
                                 {
@@ -530,7 +596,11 @@
                     } @* End of else block for normal form *@
                 </div>
                 <div class="modal-footer">
-                    @if (scoreRequest.TRRiskId == 0 && !string.IsNullOrEmpty(saveError))
+                    @if (quickAddMode && scoreRequest.TRRiskId == 0 && string.IsNullOrEmpty(saveError))
+                    {
+                        <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Cancel</button>
+                    }
+                    else if (scoreRequest.TRRiskId == 0 && !string.IsNullOrEmpty(saveError))
                     {
                         <button type="button" class="btn btn-secondary" @onclick="CloseScoreDialog">Close</button>
                     }
@@ -661,14 +731,16 @@
                             <label>@(IsNewRiskThresholdScaleMode ? "Score Band" : "Score")</label>
                             @if (IsNewRiskThresholdScaleMode)
                             {
-                                <RadzenDropDown @bind-Value="selectedNewRiskThresholdBandValue"
-                                                Data="@thresholdScoreBands"
-                                                TextProperty="Label"
-                                                ValueProperty="Value"
-                                                Placeholder="Select threshold band"
-                                                Style="width: 100%;"
-                                                TValue="decimal?"
-                                                Change="@OnNewRiskThresholdBandChanged" />
+                                <div class="band-selector">
+                                    @foreach (var band in thresholdScoreBands)
+                                    {
+                                        <button type="button"
+                                                class="band-option @band.Label.ToLower() @(selectedNewRiskThresholdBandValue == band.Value ? "selected" : "")"
+                                                @onclick="@(() => SelectNewRiskThresholdBand(band.Value))">
+                                            @band.Label
+                                        </button>
+                                    }
+                                </div>
                             }
                             else
                             {
@@ -741,14 +813,22 @@
     private bool isOverrideMode = false;
     private string? overrideReason = null;
     private string? autoCalculatedRAG = null;
-    private string? editingRatingType = null;
 
+    // Quick Add Score state
+    private bool quickAddMode = false;
+    private int? quickAddSiteId;
+    private int? quickAddRiskId;
+    private DateTime quickAddMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+    private List<TRRiskDto> quickAddRisks = new();
+    private bool isLoadingQuickAddRisks = false;
 
-    private class ThresholdScoreBandOption
+    private class QuickAddMonthOption
     {
-        public decimal Value { get; set; }
+        public DateTime Value { get; set; }
         public string Label { get; set; } = "";
     }
+
+    private List<QuickAddMonthOption> quickAddMonthOptions = new();
 
 
     private class ThresholdScoreBandOption
@@ -768,23 +848,6 @@
     private List<RiskCategoryDto> createRiskCategories = new();
     private string createRiskServiceName = "";
     private string createRiskFacilityName = "";
-    private string? newRiskRatingType = null;
-
-    private static readonly List<ThresholdScoreBandOption> thresholdScoreBands = new()
-    {
-        new() { Value = 1m, Label = "Low" },
-        new() { Value = 2m, Label = "Medium" },
-        new() { Value = 3m, Label = "High" },
-        new() { Value = 4m, Label = "Extreme" }
-    };
-
-    private decimal? selectedThresholdBandValue;
-    private decimal? selectedNewRiskThresholdBandValue;
-
-    private bool IsEditingThresholdScaleMode => IsThresholdBandRatingType(editingRatingType);
-
-    private bool IsNewRiskThresholdScaleMode => IsThresholdBandRatingType(newRiskRatingType);
-
 
     private static readonly List<ThresholdScoreBandOption> thresholdScoreBands = new()
     {
@@ -882,6 +945,16 @@
         domains = await domainsTask;
         owners = await ownersTask;
         allCategories = await categoriesTask;
+
+        // Build quick-add month options (current month + 5 previous)
+        quickAddMonthOptions.Clear();
+        var now = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        for (int i = 0; i < 6; i++)
+        {
+            var m = now.AddMonths(-i);
+            quickAddMonthOptions.Add(new QuickAddMonthOption { Value = m, Label = m.ToString("MMMM yyyy") });
+        }
+        quickAddMonth = now;
     }
 
     private void CalculatePeriodMonths()
@@ -1206,6 +1279,7 @@
             "RED" => "rag-red",
             "AMB" or "AMBER" => "rag-amber",
             "GRE" or "GREEN" => "rag-green",
+            "EXTREME" => "rag-extreme",
             _ => ""
         };
     }
@@ -1234,6 +1308,7 @@
             "GRE" => "Green",
             "AMBER" => "Amber",
             "GREEN" => "Green",
+            "EXTREME" => "Extreme",
             _ => rating ?? "-"
         };
     }
@@ -1244,23 +1319,6 @@
         return ratingType?.Trim().ToLowerInvariant() ?? string.Empty;
     }
 
-<<<<<<< HEAD
-=======
-    private static bool IsThresholdBandRatingType(string? ratingType)
-    {
-        var normalized = NormalizeRatingType(ratingType)
-            .Replace(" ", string.Empty)
-            .Replace("-", string.Empty)
-            .Replace("_", string.Empty);
-
-        return normalized switch
-        {
-            "threshold" or "thresholdrange" or "thresholddropdown" or "band" or "bands" => true,
-            _ => normalized.Contains("threshold") && normalized.Contains("range")
-        };
-    }
-
->>>>>>> 8e27cd2 (Fix threshold band mode detection for score dropdown)
     private static decimal? GetThresholdBandValue(string? ragRating)
     {
         return NormalizeRagValue(ragRating) switch
@@ -1311,32 +1369,20 @@
             : null;
     }
 
-    private void OnThresholdBandChanged(object? value)
+    private void SelectThresholdBand(decimal value)
     {
-        selectedThresholdBandValue = value as decimal?;
-        if (value is decimal decimalValue)
-        {
-            selectedThresholdBandValue = decimalValue;
-        }
-
-        scoreRequest.Score = selectedThresholdBandValue ?? 0;
-        scoreRequest.RAGRating = GetRagFromBandValue(selectedThresholdBandValue);
+        selectedThresholdBandValue = value;
+        scoreRequest.Score = value;
+        scoreRequest.RAGRating = GetRagFromBandValue(value);
         autoCalculatedRAG = scoreRequest.RAGRating;
-
         StateHasChanged();
     }
 
-    private void OnNewRiskThresholdBandChanged(object? value)
+    private void SelectNewRiskThresholdBand(decimal value)
     {
-        selectedNewRiskThresholdBandValue = value as decimal?;
-        if (value is decimal decimalValue)
-        {
-            selectedNewRiskThresholdBandValue = decimalValue;
-        }
-
-        newRiskScore = selectedNewRiskThresholdBandValue ?? 0;
-        newRiskCalculatedRAG = GetRagFromBandValue(selectedNewRiskThresholdBandValue);
-
+        selectedNewRiskThresholdBandValue = value;
+        newRiskScore = value;
+        newRiskCalculatedRAG = GetRagFromBandValue(value);
         StateHasChanged();
     }
 
@@ -1344,6 +1390,7 @@
     private async Task OpenScoreEditor(int trRiskId, string riskName, string? facilityName)
     {
         Console.WriteLine($"OpenScoreEditor called - TRRiskId: {trRiskId}, Risk: {riskName}, Facility: {facilityName}");
+        quickAddMode = false;
 
         if (trRiskId == 0)
         {
@@ -1359,7 +1406,6 @@
         saveError = null;
         editingThreshold = null;
         currentRAGRating = null;
-        editingRatingType = null;
 
         // Initialize scoreRequest first with basic info
         scoreRequest = new AddRiskScoreRequest
@@ -1438,7 +1484,6 @@
                 editingMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
                 editingThreshold = null;
                 currentRAGRating = null;
-                editingRatingType = null;
                 scoreRequest = new AddRiskScoreRequest();
                 StateHasChanged();
                 return;
@@ -1467,7 +1512,6 @@
         saveError = null;
         editingThreshold = null;
         currentRAGRating = null;
-        editingRatingType = null;
 
         // Initialize scoreRequest first with basic info
         scoreRequest = new AddRiskScoreRequest
@@ -1505,10 +1549,6 @@
                 editingSiteId = risk.SiteId;
                 editingServiceId = risk.ServiceId;
                 scoreRequest.RatingType = risk.RatingType;
-<<<<<<< HEAD
-=======
-                editingRatingType = risk.RatingType;
->>>>>>> 8e27cd2 (Fix threshold band mode detection for score dropdown)
 
                 // Get threshold for this risk's category, site, and service
                 var thresholds = await RiskService.GetTRRiskThresholdsAsync(
@@ -1518,11 +1558,6 @@
                 );
 
                 editingThreshold = thresholds.FirstOrDefault();
-                if (!string.IsNullOrWhiteSpace(editingThreshold?.RatingType))
-                {
-                    editingRatingType = editingThreshold.RatingType;
-                    scoreRequest.RatingType = editingThreshold.RatingType;
-                }
 
                 // Get current score for this month
                 var scores = await RiskService.GetTRRiskScoresAsync(trRiskId);
@@ -1646,9 +1681,67 @@
         }
     }
 
+    // Quick Add Score methods
+    private void OpenQuickAddScore()
+    {
+        quickAddMode = true;
+        quickAddSiteId = null;
+        quickAddRiskId = null;
+        quickAddMonth = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        quickAddRisks.Clear();
+        isLoadingQuickAddRisks = false;
+        saveError = null;
+        currentRAGRating = null;
+        editingThreshold = null;
+        editingRiskName = "";
+        editingFacilityName = "";
+        scoreRequest = new AddRiskScoreRequest();
+        isNewScore = true;
+        showScoreDialog = true;
+    }
+
+    private async Task OnQuickAddSiteChanged()
+    {
+        quickAddRiskId = null;
+        quickAddRisks.Clear();
+
+        if (quickAddSiteId.HasValue)
+        {
+            isLoadingQuickAddRisks = true;
+            StateHasChanged();
+
+            try
+            {
+                quickAddRisks = await RiskService.GetAllTRRisksAsync(siteId: quickAddSiteId.Value);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading risks for site: {ex.Message}");
+            }
+
+            isLoadingQuickAddRisks = false;
+        }
+    }
+
+    private async Task LoadQuickAddRisk()
+    {
+        if (quickAddSiteId == null || quickAddRiskId == null)
+            return;
+
+        var selectedRisk = quickAddRisks.FirstOrDefault(r => r.TRRiskId == quickAddRiskId.Value);
+        if (selectedRisk == null) return;
+
+        var facilityName = filteredSites.FirstOrDefault(s => s.Id == quickAddSiteId.Value)?.Name ?? "";
+
+        // Switch off quick-add mode and open the normal score editor
+        quickAddMode = false;
+        await OpenScoreEditorForMonth(selectedRisk.TRRiskId, selectedRisk.Name ?? "Unknown", facilityName, quickAddMonth);
+    }
+
     private void CloseScoreDialog()
     {
         showScoreDialog = false;
+        quickAddMode = false;
         saveError = null;
         scoreRequest = new AddRiskScoreRequest();
         selectedThresholdBandValue = null;
@@ -1657,7 +1750,6 @@
         autoCalculatedRAG = null;
         editingThreshold = null;
         currentRAGRating = null;
-        editingRatingType = null;
         StateHasChanged();
     }
 
@@ -1692,10 +1784,6 @@
         try
         {
             scoreRequest.RAGRating = NormalizeRagValue(scoreRequest.RAGRating);
-<<<<<<< HEAD
-=======
-            scoreRequest.RatingType = editingRatingType ?? scoreRequest.RatingType;
->>>>>>> 8e27cd2 (Fix threshold band mode detection for score dropdown)
 
             // If in override mode, append the override reason to notes
             if (isOverrideMode && !string.IsNullOrWhiteSpace(overrideReason))
@@ -1723,7 +1811,6 @@
                 isOverrideMode = false;
                 overrideReason = null;
                 autoCalculatedRAG = null;
-                editingRatingType = null;
 
                 // Reload data
                 await LoadData();
@@ -1759,7 +1846,6 @@
         newRiskCalculatedRAG = null;
         selectedNewRiskThresholdBandValue = null;
         newRiskThreshold = null;
-        newRiskRatingType = null;
 
         createRiskServiceName = serviceName;
         createRiskFacilityName = siteName;
@@ -1795,7 +1881,6 @@
         newRiskCalculatedRAG = null;
         selectedNewRiskThresholdBandValue = null;
         newRiskThreshold = null;
-        newRiskRatingType = null;
 
         createRiskServiceName = ""; // User will select
         createRiskFacilityName = siteName;
@@ -1836,10 +1921,6 @@
                        ?? allCategories.FirstOrDefault(c => c.Id == newRiskRequest.RiskCategoryId);
 
         newRiskRequest.RatingType = category?.RatingType;
-<<<<<<< HEAD
-=======
-        newRiskRatingType = category?.RatingType;
->>>>>>> 8e27cd2 (Fix threshold band mode detection for score dropdown)
     }
 
     private async Task OnCreateRiskServiceChanged()
@@ -1857,10 +1938,6 @@
         // Reset category selection
         newRiskRequest.RiskCategoryId = 0;
         newRiskRequest.RatingType = null;
-<<<<<<< HEAD
-=======
-        newRiskRatingType = null;
->>>>>>> 8e27cd2 (Fix threshold band mode detection for score dropdown)
         newRiskThreshold = null;
         newRiskScore = 0;
         selectedNewRiskThresholdBandValue = null;
@@ -1889,11 +1966,6 @@
                 serviceId: newRiskRequest.ServiceId
             );
             newRiskThreshold = thresholds.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(newRiskThreshold?.RatingType))
-            {
-                newRiskRatingType = newRiskThreshold.RatingType;
-                newRiskRequest.RatingType = newRiskThreshold.RatingType;
-            }
         }
         else
         {
@@ -1982,11 +2054,7 @@
                         RAGRating = newRiskCalculatedRAG,
                         Score = newRiskScore,
                         EnteredBy = 1, // TODO: Get from auth context
-<<<<<<< HEAD
                         RatingType = newRiskRequest.RatingType
-=======
-                        RatingType = newRiskRatingType ?? newRiskRequest.RatingType
->>>>>>> 8e27cd2 (Fix threshold band mode detection for score dropdown)
                     };
 
                 var scoreResult = await RiskService.AddTRRiskScoreAsync(scoreRequest);
@@ -2070,11 +2138,11 @@
         margin: 0 auto;
     }
 
-    .turnaround-risk-page .filter-bar {
-        position: sticky;
-        top: 5.5rem;
-        z-index: 45;
-    }
+        .turnaround-risk-page .filter-bar {
+            position: sticky;
+            top: 5.5rem;
+            z-index: 45;
+        }
 
     /* Card container */
     .card {
@@ -2199,6 +2267,56 @@
             border-color: var(--accent-color, #ffd170);
         }
 
+    .btn-add-score {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        border: none;
+        border-radius: 6px;
+        padding: 0.375rem 0.75rem;
+        cursor: pointer;
+        color: white;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        transition: all 0.15s ease;
+        margin-left: 0.5rem;
+    }
+
+        .btn-add-score:hover {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+        }
+
+        .btn-add-score svg {
+            flex-shrink: 0;
+        }
+
+    /* Quick Add Score Selectors */
+    .quick-add-selectors {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+        .quick-add-selectors .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+    .quick-add-actions {
+        display: flex;
+        justify-content: flex-end;
+        padding-top: 0.5rem;
+    }
+
+        .quick-add-actions .btn {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
     .sub-header-right {
         display: flex;
         align-items: center;
@@ -2258,8 +2376,8 @@
     }
 
     /* ========================================
-           RISK MATRIX (All Sites View)
-           ======================================== */
+               RISK MATRIX (All Sites View)
+               ======================================== */
     .risk-matrix-container {
         overflow-x: auto;
     }
@@ -2347,6 +2465,11 @@
             color: #16a34a;
         }
 
+        .rag-cell.rag-extreme {
+            background: rgba(153, 27, 27, 0.18);
+            color: #991b1b;
+        }
+
     .rag-text {
         font-size: 0.6875rem;
         font-weight: 600;
@@ -2361,8 +2484,8 @@
     }
 
     /* ========================================
-           SITE DRILLDOWN VIEW
-           ======================================== */
+               SITE DRILLDOWN VIEW
+               ======================================== */
     .site-drilldown-container {
         overflow-x: auto;
     }
@@ -2550,6 +2673,11 @@
             color: #16a34a;
         }
 
+        .detail-rag-cell.rag-extreme {
+            background: rgba(153, 27, 27, 0.18);
+            color: #991b1b;
+        }
+
     .no-risks-cell {
         text-align: center;
         color: var(--text-muted);
@@ -2731,7 +2859,6 @@
         align-items: center;
         justify-content: center;
         z-index: 1000;
-        backdrop-filter: blur(2px);
     }
 
     .modal-dialog {
@@ -2740,20 +2867,19 @@
         width: 100%;
         max-width: 480px;
         max-height: 90vh;
-        overflow: hidden;
+        display: flex;
+        flex-direction: column;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        animation: modalSlideIn 0.2s ease-out;
+        animation: modalFadeIn 0.2s ease-out;
     }
 
-    @@keyframes modalSlideIn {
+    @@keyframes modalFadeIn {
         from {
             opacity: 0;
-            transform: translateY(-20px);
         }
 
         to {
             opacity: 1;
-            transform: translateY(0);
         }
     }
 
@@ -2764,6 +2890,8 @@
         padding: 1rem 1.5rem;
         border-bottom: 1px solid var(--border-color, #e2e8f0);
         background: var(--bg-light, #f8fafc);
+        border-radius: 12px 12px 0 0;
+        flex-shrink: 0;
     }
 
         .modal-header h3 {
@@ -2791,7 +2919,7 @@
     .modal-body {
         padding: 1.5rem;
         overflow-y: auto;
-        max-height: calc(90vh - 140px);
+        flex: 1 1 auto;
     }
 
     .modal-footer {
@@ -2801,6 +2929,8 @@
         padding: 1rem 1.5rem;
         border-top: 1px solid var(--border-color, #e2e8f0);
         background: var(--bg-light, #f8fafc);
+        border-radius: 0 0 12px 12px;
+        flex-shrink: 0;
     }
 
     /* Score Info */
@@ -2907,6 +3037,69 @@
             color: #991b1b;
         }
 
+    /* Band Selector (threshold score bands) */
+    .band-selector {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .band-option {
+        flex: 1;
+        padding: 0.625rem 0.5rem;
+        border: 2px solid var(--border-color, #e2e8f0);
+        border-radius: 8px;
+        background: var(--card-bg, white);
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        text-align: center;
+        transition: all 0.15s;
+    }
+
+        .band-option:hover {
+            border-color: #94a3b8;
+        }
+
+        .band-option.low {
+            color: #16a34a;
+        }
+
+            .band-option.low.selected {
+                background: #dcfce7;
+                border-color: #22c55e;
+                color: #166534;
+            }
+
+        .band-option.medium {
+            color: #d97706;
+        }
+
+            .band-option.medium.selected {
+                background: #fef3c7;
+                border-color: #f59e0b;
+                color: #92400e;
+            }
+
+        .band-option.high {
+            color: #dc2626;
+        }
+
+            .band-option.high.selected {
+                background: #fee2e2;
+                border-color: #ef4444;
+                color: #991b1b;
+            }
+
+        .band-option.extreme {
+            color: #991b1b;
+        }
+
+            .band-option.extreme.selected {
+                background: #fecaca;
+                border-color: #991b1b;
+                color: #7f1d1d;
+            }
+
     /* Buttons */
     .btn {
         padding: 0.625rem 1.25rem;
@@ -2987,6 +3180,11 @@
         .current-rag-badge.rag-red {
             background: #fee2e2;
             color: #991b1b;
+        }
+
+        .current-rag-badge.rag-extreme {
+            background: #fecaca;
+            color: #7f1d1d;
         }
 
     .no-rating {
@@ -3256,5 +3454,10 @@
         font-size: 0.75rem;
         color: var(--text-muted, #64748b);
         margin-top: 0.25rem;
+    }
+
+    /* Ensure Radzen dropdown popups appear above modal overlay */
+    :global(.rz-popup) {
+        z-index: 1100 !important;
     }
 </style>
